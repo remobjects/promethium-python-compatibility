@@ -1,0 +1,272 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <ProjectGuid>{A0906D5B-6245-4F81-9D2B-F682DAD5AC1B}</ProjectGuid>
+    <OutputType>StaticLibrary</OutputType>
+    <RootNamespace>Promethium.PythonCompatibility</RootNamespace>
+    <BinaryName>Promethium.PythonCompatibility</BinaryName>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <CrossPlatform>True</CrossPlatform>
+    <OutputPathUsesModes>True</OutputPathUsesModes>
+    <OutputPathUsesSDKNames>True</OutputPathUsesSDKNames>
+    <DefaultLanguage>Promethium</DefaultLanguage>
+    <ElementsCompilerDll>/Users/mh/Code/RemObjects/Elements-develop-promethium/Bin/Core/RemObjects.Elements.dll</ElementsCompilerDll>
+    <DefaultUses>Promethium</DefaultUses>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <OutputPath>.\Bin\Debug</OutputPath>
+    <EnableAsserts>True</EnableAsserts>
+    <Optimize>False</Optimize>
+    <GenerateDebugInfo>True</GenerateDebugInfo>
+    <ConditionalDefines>DEBUG;TRACE;</ConditionalDefines>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <OutputPath>.\Bin\Release</OutputPath>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Echoes.Full' ">
+    <Mode>Echoes</Mode>
+    <TargetFramework>.NETFramework</TargetFramework>
+    <ConditionalDefines>ECHOES</ConditionalDefines>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Echoes.Core' ">
+    <Mode>Echoes</Mode>
+    <TargetFramework>.NETCore</TargetFramework>
+    <ConditionalDefines>NETCORE;ECHOES</ConditionalDefines>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Echoes.Standard' ">
+    <Mode>Echoes</Mode>
+    <TargetFramework>.NETStandard2.0</TargetFramework>
+    <ConditionalDefines>NETSTANDARD;ECHOES</ConditionalDefines>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Cooper' ">
+    <Mode>Cooper</Mode>
+    <SubMode>Java</SubMode>
+    <ConditionalDefines>COOPER</ConditionalDefines>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Island.Windows' ">
+    <Mode>Island</Mode>
+    <SubMode>Windows</SubMode>
+    <ConditionalDefines>ISLAND</ConditionalDefines>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Island.Linux' ">
+    <Mode>Island</Mode>
+    <SubMode>Linux</SubMode>
+    <ConditionalDefines>ISLAND</ConditionalDefines>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Island.Darwin.macOS' ">
+    <Mode>Island</Mode>
+    <SubMode>Darwin</SubMode>
+    <SDK>macOS</SDK>
+    <ConditionalDefines>ISLAND</ConditionalDefines>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Island.Darwin.iOS' ">
+    <Mode>Island</Mode>
+    <SubMode>Darwin</SubMode>
+    <SDK>iOS</SDK>
+    <ConditionalDefines>ISLAND</ConditionalDefines>
+    <SupportMacCatalyst>True</SupportMacCatalyst>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Island.Darwin.tvOS' ">
+    <Mode>Island</Mode>
+    <SubMode>Darwin</SubMode>
+    <SDK>tvOS</SDK>
+    <ConditionalDefines>ISLAND</ConditionalDefines>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Island.Android' ">
+    <Mode>Island</Mode>
+    <SubMode>Android</SubMode>
+    <ConditionalDefines>ISLAND</ConditionalDefines>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Island.WebAssembly' ">
+    <Mode>Island</Mode>
+    <SubMode>WebAssembly</SubMode>
+    <ConditionalDefines>ISLAND</ConditionalDefines>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Toffee.iOS' ">
+    <Mode>Toffee</Mode>
+    <SDK>iOS</SDK>
+    <ConditionalDefines>TOFFEE</ConditionalDefines>
+    <SupportMacCatalyst>True</SupportMacCatalyst>
+    <DefaultUses>Foundation;RemObjects.Elements.Linq</DefaultUses>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Toffee.macOS' ">
+    <Mode>Toffee</Mode>
+    <SDK>macOS</SDK>
+    <ConditionalDefines>TOFFEE</ConditionalDefines>
+    <DefaultUses>Foundation;RemObjects.Elements.Linq</DefaultUses>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Toffee.tvOS' ">
+    <Mode>Toffee</Mode>
+    <SDK>tvOS</SDK>
+    <ConditionalDefines>TOFFEE</ConditionalDefines>
+    <DefaultUses>Foundation;RemObjects.Elements.Linq</DefaultUses>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Toffee.watchOS' ">
+    <Mode>Toffee</Mode>
+    <SDK>watchOS</SDK>
+    <ConditionalDefines>TOFFEE</ConditionalDefines>
+    <DefaultUses>Foundation;RemObjects.Elements.Linq</DefaultUses>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="#" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="math.py" />
+    <Compile Include="operator.py" />
+    <Compile Include="Counter.py" />
+    <Compile Include="OrderedDict.py" />
+    <Compile Include="ChainMap.py" />
+    <Compile Include="Deque.py" />
+    <Compile Include="DefaultDict.py" />
+    <Compile Include="LenOverloads.py" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Echoes.Core'">
+    <Reference Include="Echoes">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Echoes\NETCore10.0\Promethium.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Elements">
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Echoes.Full'">
+    <Reference Include="Echoes">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Echoes\NET\Promethium.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Elements">
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Echoes.Standard'">
+    <Reference Include="Echoes">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Echoes\NETStandard2.0\Promethium.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Elements">
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Cooper'">
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Cooper\Plain\promethium.jar</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="elements">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="cooper">
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Toffee.iOS'">
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Toffee\iOS\libPromethium.fx</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="libElements">
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Toffee.tvOS'">
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Toffee\tvOS\libPromethium.fx</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="libElements">
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Toffee.watchOS'">
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Toffee\watchOS\libPromethium.fx</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="libElements">
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Toffee.macOS'">
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Toffee\macOS\libPromethium.fx</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Island.Android'">
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Island\Android\arm64-v8a\Promethium.fx</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Elements">
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Island.Darwin.iOS'">
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Island\iOS\arm64\Promethium.fx</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Elements">
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Island.Darwin.macOS'">
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Island\macOS\arm64\Promethium.fx</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Elements">
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Island.Darwin.tvOS'">
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Island\tvOS\arm64\Promethium.fx</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Elements">
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Island.Linux'">
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Island\Ubuntu\arm64\Promethium.fx</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Elements">
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Island.WebAssembly'">
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Island\WebAssembly\wasm32\Promethium.fx</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Elements">
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Island.Windows'">
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Island\Windows\arm64\Promethium.fx</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Elements">
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath)\RemObjects Software\Elements\RemObjects.Elements.targets" />
+</Project>

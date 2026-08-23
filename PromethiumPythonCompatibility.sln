@@ -1,0 +1,20 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# RemObjects Fire
+Project("{656346d9-4656-40da-a068-22d5425d4639}") = "PromethiumPythonCompatibility", "PromethiumPythonCompatibility.elements", "{a0906d5b-6245-4f81-9d2b-f682dad5ac1b}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|AnyCPU = Debug|AnyCPU
+		Release|AnyCPU = Release|AnyCPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{a0906d5b-6245-4f81-9d2b-f682dad5ac1b}.Debug|AnyCPU.ActiveCfg = Debug|AnyCPU
+		{a0906d5b-6245-4f81-9d2b-f682dad5ac1b}.Debug|AnyCPU.Build.0 = Debug|AnyCPU
+		{a0906d5b-6245-4f81-9d2b-f682dad5ac1b}.Release|AnyCPU.ActiveCfg = Release|AnyCPU
+		{a0906d5b-6245-4f81-9d2b-f682dad5ac1b}.Release|AnyCPU.Build.0 = Release|AnyCPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

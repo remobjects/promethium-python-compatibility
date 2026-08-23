@@ -1,0 +1,152 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <ProjectGuid>{AE2758AE-EC34-42FC-9925-0E3730C761D5}</ProjectGuid>
+    <OutputType>StaticLibrary</OutputType>
+    <BinaryName>Promethium.PythonCompatibility</BinaryName>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <CrossPlatform>True</CrossPlatform>
+    <OutputPathUsesModes>True</OutputPathUsesModes>
+    <OutputPathUsesSDKNames>True</OutputPathUsesSDKNames>
+    <DefaultLanguage>Promethium</DefaultLanguage>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <OutputPath>.\Bin\Debug</OutputPath>
+    <EnableAsserts>True</EnableAsserts>
+    <Optimize>False</Optimize>
+    <GenerateDebugInfo>True</GenerateDebugInfo>
+    <ConditionalDefines>DEBUG;TRACE;</ConditionalDefines>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <OutputPath>.\Bin\Release</OutputPath>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Echoes.Full' ">
+    <Mode>Echoes</Mode>
+    <TargetFramework>.NETFramework</TargetFramework>
+    <ConditionalDefines>ECHOES</ConditionalDefines>
+    <DefaultUses>System.Linq;Promethium</DefaultUses>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Echoes.Core' ">
+    <Mode>Echoes</Mode>
+    <TargetFramework>.NETCore</TargetFramework>
+    <ConditionalDefines>NETCORE;ECHOES</ConditionalDefines>
+    <DefaultUses>System.Linq;Promethium</DefaultUses>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Echoes.Standard' ">
+    <Mode>Echoes</Mode>
+    <TargetFramework>.NETStandard2.0</TargetFramework>
+    <ConditionalDefines>NETSTANDARD;ECHOES</ConditionalDefines>
+    <DefaultUses>System.Linq;Promethium</DefaultUses>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Cooper' ">
+    <Mode>Cooper</Mode>
+    <SubMode>Java</SubMode>
+    <ConditionalDefines>COOPER</ConditionalDefines>
+    <DefaultUses>RemObjects.Elements.Linq;Promethium</DefaultUses>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Island.Windows' ">
+    <Mode>Island</Mode>
+    <SubMode>Windows</SubMode>
+    <ConditionalDefines>ISLAND</ConditionalDefines>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Island.Linux' ">
+    <Mode>Island</Mode>
+    <SubMode>Linux</SubMode>
+    <ConditionalDefines>ISLAND</ConditionalDefines>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Island.Darwin.macOS' ">
+    <Mode>Island</Mode>
+    <SubMode>Darwin</SubMode>
+    <SDK>macOS</SDK>
+    <ConditionalDefines>ISLAND</ConditionalDefines>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Island.Darwin.iOS' ">
+    <Mode>Island</Mode>
+    <SubMode>Darwin</SubMode>
+    <SDK>iOS</SDK>
+    <ConditionalDefines>ISLAND</ConditionalDefines>
+    <SupportMacCatalyst>True</SupportMacCatalyst>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Island.Darwin.tvOS' ">
+    <Mode>Island</Mode>
+    <SubMode>Darwin</SubMode>
+    <SDK>tvOS</SDK>
+    <ConditionalDefines>ISLAND</ConditionalDefines>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Island.Android' ">
+    <Mode>Island</Mode>
+    <SubMode>Android</SubMode>
+    <ConditionalDefines>ISLAND</ConditionalDefines>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Island.WebAssembly' ">
+    <Mode>Island</Mode>
+    <SubMode>WebAssembly</SubMode>
+    <ConditionalDefines>ISLAND</ConditionalDefines>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Toffee.iOS' ">
+    <Mode>Toffee</Mode>
+    <SDK>iOS</SDK>
+    <ConditionalDefines>TOFFEE</ConditionalDefines>
+    <SupportMacCatalyst>True</SupportMacCatalyst>
+    <DefaultUses>Foundation;RemObjects.Elements.Linq;Promethium</DefaultUses>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Toffee.macOS' ">
+    <Mode>Toffee</Mode>
+    <SDK>macOS</SDK>
+    <ConditionalDefines>TOFFEE</ConditionalDefines>
+    <DefaultUses>Foundation;RemObjects.Elements.Linq;Promethium</DefaultUses>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Toffee.tvOS' ">
+    <Mode>Toffee</Mode>
+    <SDK>tvOS</SDK>
+    <ConditionalDefines>TOFFEE</ConditionalDefines>
+    <DefaultUses>Foundation;RemObjects.Elements.Linq;Promethium</DefaultUses>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Target)' == 'Toffee.watchOS' ">
+    <Mode>Toffee</Mode>
+    <SDK>watchOS</SDK>
+    <ConditionalDefines>TOFFEE</ConditionalDefines>
+    <DefaultUses>Foundation;RemObjects.Elements.Linq;Promethium</DefaultUses>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="#" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="collections.py" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Echoes.Core'">
+    <Reference Include="Echoes">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Echoes\NETCore10.0\Promethium.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Echoes.Full'">
+    <Reference Include="Echoes">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Echoes\NET\Promethium.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Target)' == 'Echoes.Standard'">
+    <Reference Include="Echoes">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Promethium">
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Echoes\NETStandard2.0\Promethium.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <!-- TODO: Cooper/Island/Toffee targets also need a Promethium reference (see
+       ../PromethiumBaseLibrary/Bin/Debug/<Mode>/... for the built artifacts);
+       only the Echoes targets have been wired and validated so far. -->
+  <Import Project="$(MSBuildExtensionsPath)\RemObjects Software\Elements\RemObjects.Elements.targets" />
+</Project>

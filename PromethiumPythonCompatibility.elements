@@ -10,6 +10,7 @@
     <OutputPathUsesModes>True</OutputPathUsesModes>
     <OutputPathUsesSDKNames>True</OutputPathUsesSDKNames>
     <DefaultLanguage>Promethium</DefaultLanguage>
+    <MangleTypenames>True</MangleTypenames>
     <ElementsCompilerDll>/Users/mh/Code/RemObjects/Elements-develop-promethium/Bin/Core/RemObjects.Elements.dll</ElementsCompilerDll>
     <DefaultUses>Promethium</DefaultUses>
   </PropertyGroup>
@@ -117,12 +118,51 @@
   <ItemGroup>
     <Compile Include="math.py" />
     <Compile Include="operator.py" />
-    <Compile Include="Counter.py" />
-    <Compile Include="OrderedDict.py" />
-    <Compile Include="ChainMap.py" />
-    <Compile Include="Deque.py" />
-    <Compile Include="DefaultDict.py" />
+    <Compile Include="Counter.py">
+      <VirtualFolder>collections</VirtualFolder>
+    </Compile>
+    <Compile Include="OrderedDict.py">
+      <VirtualFolder>collections</VirtualFolder>
+    </Compile>
+    <Compile Include="ChainMap.py">
+      <VirtualFolder>collections</VirtualFolder>
+    </Compile>
+    <Compile Include="Deque.py">
+      <VirtualFolder>collections</VirtualFolder>
+    </Compile>
+    <Compile Include="DefaultDict.py">
+      <VirtualFolder>collections</VirtualFolder>
+    </Compile>
     <Compile Include="LenOverloads.py" />
+    <Compile Include="heapq.py" />
+    <Compile Include="bisect.py" />
+    <Compile Include="itertools.py" />
+    <Compile Include="string.py" />
+    <Compile Include="statistics.py" />
+    <Compile Include="copy.py" />
+    <Compile Include="functools.py" />
+    <Compile Include="random.py" />
+    <Compile Include="fractions.py" />
+    <Compile Include="graphlib.py" />
+    <Compile Include="decimal.py" />
+    <Compile Include="cmath.py" />
+    <Compile Include="datetime.py" />
+    <Compile Include="calendar.py" />
+    <Compile Include="ipaddress.py" />
+    <Compile Include="colorsys.py" />
+    <Compile Include="uuid.py" />
+    <Compile Include="textwrap.py" />
+    <Compile Include="csv.py" />
+    <Compile Include="configparser.py" />
+    <Compile Include="difflib.py" />
+    <Compile Include="fnmatch.py" />
+    <Compile Include="shlex.py" />
+    <Compile Include="html.py" />
+    <Compile Include="xml.py" />
+    <Compile Include="re.py" />
+    <Folder Include="collections">
+      <Virtual>True</Virtual>
+    </Folder>
   </ItemGroup>
   <ItemGroup Condition="'$(Target)' == 'Echoes.Core'">
     <Reference Include="Echoes">
@@ -133,6 +173,7 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="Elements">
+      <HintPath>..\RTL2\Bin\Echoes\NETCore6.0\Elements.dll</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>
@@ -145,6 +186,7 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="Elements">
+      <HintPath>..\RTL2\Bin\Echoes\NET\Elements.dll</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>
@@ -157,6 +199,7 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="Elements">
+      <HintPath>..\RTL2\Bin\Echoes\NETStandard2.0\Elements.dll</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>
@@ -166,6 +209,7 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="elements">
+      <HintPath>..\RTL2\Bin\Cooper\Plain\elements.jar</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="cooper">
@@ -178,6 +222,7 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="libElements">
+      <HintPath>..\RTL2\Bin\Toffee\iOS\libElements.fx</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>
@@ -187,6 +232,7 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="libElements">
+      <HintPath>..\RTL2\Bin\Toffee\tvOS\libElements.fx</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>
@@ -196,12 +242,17 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="libElements">
+      <HintPath>..\RTL2\Bin\Toffee\watchOS\libElements.fx</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>
   <ItemGroup Condition="'$(Target)' == 'Toffee.macOS'">
     <Reference Include="Promethium">
       <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Toffee\macOS\libPromethium.fx</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="libElements">
+      <HintPath>..\RTL2\Bin\Toffee\macOS\libElements.fx</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>
@@ -211,6 +262,7 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="Elements">
+      <HintPath>..\RTL2\Bin\Island\Android\arm64-v8a\Elements.fx</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>
@@ -220,6 +272,7 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="Elements">
+      <HintPath>..\RTL2\Bin\Island\iOS\arm64\Elements.fx</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>
@@ -229,6 +282,7 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="Elements">
+      <HintPath>..\RTL2\Bin\Island\macOS\arm64\Elements.fx</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>
@@ -238,15 +292,17 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="Elements">
+      <HintPath>..\RTL2\Bin\Island\tvOS\arm64\Elements.fx</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>
   <ItemGroup Condition="'$(Target)' == 'Island.Linux'">
     <Reference Include="Promethium">
-      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Island\Ubuntu\arm64\Promethium.fx</HintPath>
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Island\Ubuntu\x86_64\Promethium.fx</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="Elements">
+      <HintPath>..\RTL2\Bin\Island\Ubuntu\x86_64\Elements.fx</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>
@@ -256,15 +312,17 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="Elements">
+      <HintPath>..\RTL2\Bin\Island\WebAssembly\wasm32\Elements.fx</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>
   <ItemGroup Condition="'$(Target)' == 'Island.Windows'">
     <Reference Include="Promethium">
-      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Island\Windows\arm64\Promethium.fx</HintPath>
+      <HintPath>..\PromethiumBaseLibrary\Bin\Debug\Island\Windows\x86_64\Promethium.fx</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="Elements">
+      <HintPath>..\RTL2\Bin\Island\Windows\x86_64\Elements.fx</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>

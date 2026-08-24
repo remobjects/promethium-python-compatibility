@@ -5,17 +5,85 @@ Promethium projects that are being ported from Python. Nothing is enabled by
 default: a project opts in by referencing this library and importing the
 required module.
 
-The `math` module declares `@namespace("math")`, so consumers use the normal
-Python-shaped `import math` spelling rather than the project implementation
-namespace. Its initial portable surface is `fabs` and `isnan`.
+## `math`
+
+Declares `@namespace("math")`, so consumers use the normal Python-shaped
+`import math` spelling rather than the project implementation namespace —
+though as with `heapq`/`bisect` below, `from math import sqrt` doesn't
+actually work (function imports only bind types in Promethium); add `math`
+to the consuming project's `DefaultUses` and call functions bare instead,
+or call fully qualified as `math.sqrt(...)`.
+
+Where a function can be implemented with pure Promethium arithmetic, it is,
+with no native call and no per-target branching at all: `fabs`, `isnan`
+(the two original functions), plus `isinf`, `isfinite`, `copysign`, `fmod`
+(just Promethium's own `%` operator — already confirmed working for floats
+by `operator.py`'s `mod`), `degrees`, `radians`, `gcd`, `factorial`.
+`isinf`/`isfinite` are themselves built from `isnan` with the same kind of
+NaN-arithmetic trick as the original `isnan` (`inf - inf` is NaN; nothing
+else subtracted from itself is), rather than a native
+`Double.IsInfinity`-equivalent per target.
+
+Everything else — roots, logs, trig, powers — genuinely needs a native
+call, since each of the four backends spells its math library differently.
+Confirmed working (compiled clean across all fifteen targets and
+runtime-verified against CPython's own output on Echoes): `sqrt`, `hypot`
+(built from `sqrt`), `pow`, `exp`, `log`, `log2`, `log10`, `floor`, `ceil`,
+`trunc`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`. Each branches
+on `defined("ECHOES"|"ISLAND"|"COOPER")` to call, respectively,
+`System.Math.*`, `RemObjects.Elements.System.Math.*`, or bare `Math.*`
+(java.lang.Math, lowercase methods, no import needed) — the same
+fully-qualified-native-call pattern `PromethiumBaseLibrary`'s own
+`Builtins.py` already uses for `print`
+(`RemObjects.Elements.System.writeLn(value)`). Toffee uses `rtl.*`
+(`rtl.sqrt`, `rtl.floor`, etc.) rather than the bare global C functions of
+the same name (`sqrt(...)` also exists in Toffee mode) — calling a bare
+`sqrt(...)` from *inside this module's own function named `sqrt`* would
+recurse into itself instead of reaching the C library. `log2` has no
+`System.Math.Log2` pre-.NET 6 and no confirmed `rtl`/Cooper equivalent, so
+Echoes/Cooper/Toffee all compute it as `log(value) / log(2.0)`; only Island
+has a native `Log2`. `trunc` has no direct Cooper equivalent either, so it
+branches to `Math.ceil`/`Math.floor` there based on the value's sign.
+
+`int(...)`/`float(...)` casts are avoided entirely — there's no
+confirmed-working cast syntax in this codebase yet, so every function
+above either returns a native call's `float` result directly or stays in
+`int` arithmetic throughout (`gcd`, `factorial`, and the additions below).
+
+Also added, all pure `int`/`float` arithmetic with no native call:
+`comb(n, k)`, `perm(n, k)` (the standard incremental-multiply/divide
+identities, exact at every step — no intermediate rounding), `prod`
+(`int`/`float` overloads, like `sum`), `dist(p, q)` (2D points only, via
+`sqrt`), and `isqrt(n)` — integer square root via pure-integer Newton's
+method (no float involved at all, sidestepping the float→int cast
+question entirely rather than computing `floor(sqrt(float(n)))` and
+needing to cast the result back).
 
 ## `operator`
 
-A small, target-neutral subset of Python's `operator` API: integer and
+A target-neutral subset of Python's `operator` API: integer and
 floating-point arithmetic, primitive ordering comparisons, integer/float/
-boolean equality, and boolean negation. It uses only Promethium language
-operators, so the same source can be built for Echoes, Cooper, Island, and
-Toffee.
+boolean equality, boolean negation/truth, `abs`, bitwise ops (`and_`, `or_`,
+`xor`, `invert`, `lshift`, `rshift`), floor division, and a handful of
+sequence operations over `Promethium.List` (`getitem`, `setitem`, `concat`,
+`contains`, `countOf`, `indexOf`). Runtime-verified against CPython's own
+`operator` module output for every function.
+
+`floordiv` hand-rolls CPython's floor-toward-negative-infinity semantics
+(`/` and `%` are assumed to truncate toward zero, like C/C#/Java, since
+Promethium's `//` operator is unconfirmed to exist or match CPython's
+rounding) — verified correct for both-positive, both-negative, and
+mixed-sign operands.
+
+`contains`/`countOf` are built on `List.count()` rather than `List.index()`
+deliberately: Toffee's `indexOfObject:` returns Cocoa's `NSNotFound`
+sentinel (not `-1`) when an item is missing, so a portable "not found"
+check can't just test `index() >= 0`. `indexOf` instead does its own linear
+scan with `.Equals`/`.isEqual` — the same technique `collections`' classes
+already use for their own lookups (see `Counter.py`'s `_index_of`) — and
+raises `ValueError` on a miss, matching CPython's `list.index()`.
+`setitem` is a thin wrapper over `List.__setitem__` — see the note on
+`List`'s bracket-write indexer below.
 
 ## `collections`
 
@@ -146,7 +214,17 @@ normal operations; `appendleft`/`popleft`/`extendleft` use `insert(0, ...)`/
 structure for O(1) at both ends, which is future work. This is correct, not
 fast. Supported: `append`/`appendleft`/`pop`/`popleft`/`extend`/`extendleft`/
 `clear`/`count`/`rotate(n)`/`copy()`/`__contains__` (and `Contains`, for
-`in`).
+`in`); `maxlen` (a public field, read directly as `dq.maxlen` — bounded
+construction via `Deque[T](maxlen)` or `Deque[T](values, maxlen)`, `-1`
+meaning unbounded, the same concrete stand-in for CPython's `None` this
+project uses elsewhere for a `hi`/`default`-style parameter, e.g.
+`bisect.py`'s `hi`). `append`/`appendleft` each evict from the *opposite*
+end once `maxlen` is exceeded, matching CPython's per-append eviction
+exactly rather than a single bulk trim; `extend`/`extendleft` loop over
+`append`/`appendleft` so they inherit the same behavior automatically.
+Runtime-verified character-for-character against CPython's own `deque`
+output for both eviction directions and for bounded construction from an
+existing list.
 
 ### Generic self-reference: fixed
 
@@ -205,6 +283,736 @@ target uniformly — see Build notes below), the limitation is handled inside
 silently misbehaving; every other target takes the normal auto-vivify path
 in the `else` branch.
 
+## `itertools`
+
+An eager subset of Python's `itertools`: every function returns a
+fully-materialized `List` instead of a lazy iterator, the same choice
+`PromethiumBaseLibrary`'s own `range()` already makes (Promethium generators
+are outside the initial language slice). Runtime-verified against CPython's
+own output: `chain` (2- and 3-argument overloads — no `*args` support),
+`repeat(value, times)`, `islice`, `compress`, `accumulate` (`int`/`float`
+overloads, like `sum()`), `product`, `permutations`, `combinations`,
+`combinations_with_replacement`, `zip_longest`.
+
+Infinite generators (`count`, `cycle`, no-`times` `repeat`) have no eager
+equivalent and aren't attempted. Predicate-taking functions (`takewhile`,
+`dropwhile`, `filterfalse`, `starmap`) aren't attempted either: there's no
+confirmed, tested way to type a callable/predicate parameter in this
+codebase yet (`DefaultDict`'s untyped, `.Invoke()`-only factory field is the
+only precedent, and it isn't enough to build a generic predicate parameter
+on).
+
+`zip_longest` takes two fill values instead of CPython's single shared
+`fillvalue`: with independently-typed sequences (`T` and `U`), one value
+can't satisfy both slots' types statically. Both fill parameters default to
+`None`, matching `DefaultDict.get`'s already-proven generic-default pattern.
+
+`permutations`/`combinations`/`combinations_with_replacement` are built in
+two phases — compute over plain `List[int]` index arrays first, then map
+indices to `T` values — because of a real compiler limitation found while
+writing them: **a generic function that calls itself recursively fails to
+compile** ("Generic parameter T for this method call could not fully be
+resolved"), even though every call-site type is already concrete. This is
+distinct from the (now-fixed) generic-class-self-reference issue in
+`Counter.py` — that was a class referencing its own type in a method
+signature; this is a function recursing by name, and remains unfixed. The
+workaround: keep the actual recursion in a private, non-generic helper
+(operating on `List[int]`/`List[bool]`, no type parameter at all), and have
+the public generic function call that helper once, non-recursively.
+
+## `string`
+
+Just the character-class constants (`ascii_lowercase`, `ascii_uppercase`,
+`ascii_letters`, `digits`, `hexdigits`, `octdigits`, `punctuation`,
+`whitespace`, `printable`), exposed as zero-argument functions rather than
+Python-style module attributes (`string.digits` becomes `digits()`).
+Runtime-verified character-for-character against CPython's own values,
+except `whitespace`/`printable`, which omit `\x0b`/`\x0c` (vertical
+tab/form feed) — no confirmed-working way to spell those escapes in a
+Promethium string literal was tried, so they're left out rather than
+guessed at; `whitespace()` has 4 characters where CPython's has 6, and
+`printable()` is shorter by the same 2.
+
+Two real findings shaped the zero-argument-function design, both worth
+knowing for any future module:
+
+- **A top-level `name: str = "..."` module constant compiles fine, but
+  isn't consumable either way**: a bare reference to it doesn't resolve via
+  `DefaultUses` the way a bare *function* call does (functions from
+  `heapq`/`bisect`/`math`/`operator`/`itertools` all resolve bare at the
+  consumer level; a top-level `str` constant declared the same way did
+  not), and...
+- **...the namespace name `string` itself collides with the native
+  `String` type**: `string.digits` fails with "Case for identifier
+  'string' does not match original case 'String'" then "No static member
+  'digits' on type 'String'" — `string` resolves case-insensitively to the
+  platform's `String` type instead of this module's namespace. Any future
+  module should avoid namespace names that collide case-insensitively with
+  a built-in type name.
+
+Both problems disappear with zero-argument functions: consumers add
+`string` to `DefaultUses` and call `digits()`/`punctuation()`/etc. bare,
+exactly like every other module in this project — never writing `string.`
+at all.
+
+Also adds `split(value, sep=None)` — the compiler team's own call on the
+"`String.Split`'s overload set is confusing" compiler-gaps finding: not a
+Promethium parser gap, just a genuinely ambiguous native overload set (a
+bare string argument suggests one overload, a `Char[]` argument suggests a
+*different* one, and neither call lands cleanly), so it's a plain
+BaseLibrary-level implementation instead of trying to force native
+resolution. Same manual character-scan idiom as `capwords`. Matches
+CPython's `str.split()` exactly: omitting `sep` splits on whitespace runs
+and discards empty/leading/trailing tokens; a non-empty `sep` splits on
+that literal substring and keeps empty tokens between consecutive
+separators (`"a,,b".split(",") == ["a", "", "b"]`). An empty `sep` would be
+a `ValueError` in CPython; this project has no exception-raising
+convention anywhere else, so it degrades to returning `[value]` unchanged
+instead. Runtime-verified against CPython for whitespace splitting,
+multi-character separators, and the empty-string/empty-separator edge
+case.
+
+Also adds `capwords(value)` — CPython's own split-and-capitalize algorithm,
+built on private per-target-branched helpers (`_upper`/`_lower`/`_length`/
+`_substring`) that call native string methods directly (`.ToUpper()`/
+`.toUpperCase()`/`.uppercaseString`, etc.) exactly the way `math.py` calls
+native math functions. This corrects an earlier wrong assumption in this
+file: native string manipulation is **not** actually blocked — it was
+simply untested. Direct probing (three rounds of throwaway per-target
+compile experiments) confirmed `.ToUpper`/`.ToLower`/`.Trim`/`.Replace`/
+`.Contains`/`.IndexOf`/`.Substring`/`.Length` all compile clean on every
+target via `defined("ECHOES"|"ISLAND"|"COOPER")` branching, the same shape
+as `math.py`'s native calls. `.Split` is the one method that didn't resolve
+cleanly on a first attempt (ambiguity between at least two different
+overloads) — `capwords` sidesteps it entirely with a manual character
+scan (`_substring`/`_length` in a loop) rather than chasing the exact
+`Split` signature. Runtime-verified against CPython's own `capwords`
+output, including the empty-string and multiple-consecutive-spaces edge
+cases. `Template` is still not attempted — it needs meaningfully more
+string-parsing machinery than a single split-and-capitalize pass.
+
+A related, separately-confirmed finding: `int`/`float` → `str` conversion
+needs **no** native call or per-target branching at all — `"" + intValue`
+and `"" + floatValue` (plain string concatenation, value on the right)
+compile clean on every target and produce the expected text at runtime.
+This is a different mechanism from the method calls above (the `+`
+operator's own implicit conversion, not a method call on the value), and
+retroactively unblocked real `__str__` methods on `fractions.Fraction`,
+`decimal.DecimalValue`, and `cmath.ComplexValue` (see those sections).
+
+## `statistics`
+
+A small, opt-in subset of Python's `statistics` module: `mean`, `median`,
+`median_low`, `median_high`, `mode`, `variance`, `pvariance`, `stdev`,
+`pstdev`, `harmonic_mean`, `geometric_mean` (the latter via `math.log`/
+`math.exp`, fully qualified). Unlike `median`, `median_low`/`median_high`
+return the *same type as the input* (`int` stays `int`), matching CPython
+exactly — no float-promotion ambiguity to route around since neither one
+ever needs to average two elements together. Overloaded for `int`/
+`float` like `heapq`/`bisect` (ordering and arithmetic aren't available on
+unconstrained generic `T`), except `mode`, which is fully generic — it's
+built directly on `collections.Counter[T]` (`Counter[T](data).most_common(1)`)
+and only needs `T` to support equality, which `Counter` already provides.
+Runtime-verified against CPython's own output for every function, including
+both the even- and odd-length cases of `median`.
+
+`median` always returns `float`, unlike CPython's version (which returns
+the *middle element's own type* for odd-length input, only promoting to
+`float` for the even-length average) — a Promethium function can't return
+one type or another based on a runtime-only condition, so this always
+returns `float`; the numeric value still matches CPython exactly in every
+case, only the static type differs for odd-length `int` input.
+
+Calls `Promethium.sorted(...)` and `math.sqrt(...)` fully qualified rather
+than bare, the same workaround `heapq.py` needed for calling a concrete
+function from another namespace (bare calls to those don't reliably
+resolve via ambient `DefaultUses`).
+
+## `copy`
+
+`copy(values)` (shallow) and `deepcopy(values)` (one level deep, for
+`List[List[T]]` only) — the smallest possible slice of Python's `copy`
+module that's generically implementable without reflection over arbitrary
+types (a fully generic `deepcopy` recursing into arbitrary user-defined
+objects isn't attempted, same reasoning as `namedtuple`'s exclusion from
+`collections`). Runtime-verified: mutating a shallow copy leaves the
+original untouched, and mutating a deep copy's *inner* list also leaves the
+original's inner list untouched (the property a plain `copy()` on a
+`List[List[T]]` wouldn't have, since a shallow copy of a list of lists still
+shares the inner lists by reference).
+
+`deepcopy` intentionally has **no** flat `List[T]` overload alongside the
+`List[List[T]]` one — flat and nested "deep" copies would be different
+methods needing to agree on how to bind `T` for the same `List[List[int]]`
+argument (does `T` mean `int` or `List[int]`?), and the compiler refuses to
+guess, failing with "Ambiguous call to overloaded method 'deepcopy'"
+(confirmed by writing the flat overload first and hitting this on every
+call with a nested list). For a flat list, "deep" and "shallow" copy are
+the same operation anyway (nothing nested to alias) — call `copy()`
+directly.
+
+Writing this module's demo also reconfirmed and *sharpened* an existing
+finding (at the time): `List`'s bracket-write indexer was read-only not
+just "on at least one target" (as `heapq.py` originally found on Toffee)
+but **on Echoes too** — `shallow[0] = 99` on a plain `Promethium.List[int]`
+failed there with "Default indexer ... is read-only". That was correct
+compiler behavior, not a bug: `PromethiumBaseLibrary.List` only declared
+`__getitem__`, never `__setitem__`, at the time. **`List` has since gained
+a real `__setitem__`**, so bracket-write (`someList[i] = value`, including
+compound assignment like `someList[i] += 1`) now works directly, and every
+module in this project that used to route around it with
+`pop(index)` + `insert(index, value)` (`Counter.__setitem__`,
+`OrderedDict.__setitem__`, `DefaultDict.__setitem__`, `heapq.py`'s sift
+functions, `itertools.py`'s permutation bookkeeping,
+`random.py`'s `shuffle`, `operator.setitem`) has been simplified back to
+plain bracket assignment. Re-verified with the same regression cases each
+of those already had, all still passing.
+
+## `functools`
+
+Just `reduce` — `partial`/`lru_cache`/`wraps`/`cmp_to_key` all need either
+decorators or storing and re-dispatching an arbitrary callable's signature,
+neither attempted anywhere in this codebase. `reduce`'s `func` parameter is
+deliberately untyped, matching `DefaultDict`'s factory field (there's no
+confirmed way to type a callable parameter here — see `itertools.py`'s
+notes), and is invoked with `func.Invoke(accumulator, item)`.
+
+Two-argument `.Invoke(a, b)` works on Echoes/Island/Cooper but not Toffee:
+an untyped parameter erases to Objective-C `id` there, which doesn't expose
+a matching 2-parameter `invoke` ("No overloaded method 'invoke' with 2
+parameters on type 'id'"). Handled the same way `DefaultDict.__getitem__`
+handles its own Toffee limitation: `defined("TOFFEE")` raises a clear error
+instead of failing to compile or misbehaving silently.
+
+Runtime-verified with a **lambda** argument (`reduce(lambda a, b: a + b,
+values, 0)`). A plain named function passed by reference does **not**
+work as a callable argument — `reduce(myFunc, ...)` fails even when
+fully-qualified, because the compiler insists on *calling* a named function
+rather than treating its name as a value ("Parenthesis required for call").
+Always pass a lambda literal to any function-parameter-taking API in this
+project, including multi-parameter ones (`lambda a, b: ...` is confirmed
+working, not just the zero-parameter form `DefaultDict`'s factory uses).
+
+## `random`
+
+Exposes a single class, `RandomGenerator` (constructed as
+`RandomGenerator(seed)`) — deliberately not named plain `Random`, and
+deliberately not CPython's free-function-plus-implicit-global-state shape.
+Both deviations were forced, not stylistic:
+
+- **`class Random:` fails to compile on every Toffee target**: "The public
+  type 'Random' has a duplicate with the same short name in reference
+  'Elements', which is not allowed on Cocoa" — Cocoa's flat type registry
+  rejects two types sharing a short name even across different namespaces,
+  unlike Echoes/Island/Cooper. Renaming to `RandomGenerator` fixed it.
+- **CPython's implicit global default instance has no safe equivalent
+  here**: native per-target RNGs turned up real uncertainty on every
+  leg — Echoes' `System.Random` needs an instance (whether Python-style
+  parens instantiate a *native* type at all, stored in a variable, is
+  unconfirmed anywhere in this codebase or the wider Elements tree — the
+  only related precedent is a native type constructed inline inside a bare
+  `raise` expression); Island's native `Random` only exposes a raw
+  `Cardinal`, no ranged/double helpers; Cooper's `Math.random()` can't be
+  seeded; and Toffee's candidates (`arc4random_uniform`, `rtl.random`) are
+  only confirmed from Oxygene-compiled code, never a Promethium `.py` file.
+  Rather than gamble on several unconfirmed behaviors at once (including
+  whether a *module-level* mutable field even works, which is separately
+  unconfirmed — see `string.py`'s notes on module-level constants), this
+  implements its own small, fully portable linear congruential generator in
+  pure Promethium arithmetic — no native call and no per-target branching
+  anywhere — storing its state in an ordinary *instance* field
+  (`RandomGenerator._state`), the same proven kind of per-instance mutable
+  state `Counter._entries` already relies on.
+
+This is a deliberately low-quality generator next to CPython's Mersenne
+Twister: `random()` has 6 significant decimal digits of resolution, not a
+full 53-bit mantissa — fine for shuffling/sampling, not for anything
+statistically sensitive. Runtime-verified: same seed reproduces an
+identical sequence; `randint(a, b)` stays in `[a, b]` across 1000 trials;
+`shuffle` preserves length and the sum of elements (a permutation, not a
+resample); `choice` returns an in-range element; `uniform(a, b)` stays in
+range. `choice`/`shuffle` are overloaded for `int`/`float`/`str`, like
+`heapq`/`bisect`.
+
+Also exposes `next32()`, returning the raw internal LCG step as-is — added
+for `uuid.py`, which needs full-range 32-bit words: `randint`'s own
+`b - a + 1` span computation overflows `Int32` for the full `Int32` range
+itself, so it can't produce one safely.
+
+## `fractions`
+
+Just `Fraction`: construction from a numerator/denominator pair (reduced to
+lowest terms with a positive denominator via `math.gcd`, fully qualified —
+same reasoning as `statistics.py`'s calls to `math.sqrt`) or from a single
+integer; `__add__`/`__sub__`/`__mul__`/`__truediv__`/`__neg__`/`__abs__`/
+`__pow__` (integer exponent, positive or negative — a negative exponent
+inverts numerator/denominator)/`__eq__`/`__lt__`/`__le__`/`__float__`/
+`__str__`. `__pow__` loops rather than recursing (though recursion would
+likely be fine here too — `Fraction` isn't generic, so it wouldn't hit the
+generic-function self-recursion limitation `itertools.py` documents; the
+loop was just simpler to reason about directly). Like `Counter`'s
+arithmetic dunders, these
+are reachable only via explicit calls (`a.__add__(b)`), not `+`/`-`/`==`/
+`<` operator syntax — Promethium doesn't lower those operators to dunder
+methods on a class any more than it does for `Counter`. Runtime-verified
+against CPython's own `fractions.Fraction` output for every operation,
+including automatic reduction (`Fraction(4, 8)` stores as `1/2`).
+
+`__str__` is built on plain string concatenation (`"" + self.numerator +
+"/" + self.denominator`) — `int`→`str` conversion turned out to need no
+native call or per-target branching at all: `"" + intValue` compiles clean
+on every target and produces the expected text at runtime. (An earlier
+version of this file claimed the opposite — see `string.py`'s notes above
+for the correction and how it was found.) `__float__`
+forces true floating-point division (`(self.numerator * 1.0) /
+self.denominator`) rather than `self.numerator / self.denominator`
+directly: both operands would otherwise be `int`, and this codebase
+consistently assumes `int / int` truncates like C/C#/Java (see `operator.
+py`'s `floordiv`) — multiplying by `1.0` first forces the division itself
+to run in floating point.
+
+## `graphlib`
+
+Just `TopologicalSorter.static_order()` — the incremental `prepare()`/
+`get_ready()`/`done()` protocol isn't attempted, since `static_order()`
+covers the common case (a full dependency order computed up front) without
+needing to model in-progress state across calls. `add(node, predecessors)`
+takes a `List[T]` of predecessors rather than CPython's `*predecessors`
+(no `*args` in this language slice); a cycle raises `Promethium.ValueError`
+rather than CPython's `CycleError` (no custom exception types have been
+established in this project). Node lookup is a linear `.Equals`/`.isEqual`
+scan, exactly like `Counter._index_of`. Runtime-verified: a small diamond-
+shaped dependency graph produces a valid order, and a genuine cycle raises
+(caught via `try`/`except ValueError`, confirmed working here — the first
+`try`/`except` used anywhere in this project).
+
+## `decimal`
+
+A fixed-point `DecimalValue` (unscaled `int` + `scale`, value =
+`unscaled / 10^scale`) — not CPython's arbitrary-precision,
+context-configurable `Decimal`, but exact base-10 arithmetic within `int`'s
+range, the property `decimal` is normally reached for (avoiding float's
+binary-fraction rounding). `__add__`/`__sub__`/`__mul__`/`__eq__`/`__lt__`/
+`__le__`/`__float__`/`__str__`, explicit-call-only like `Fraction`/
+`Counter`. `__str__` zero-pads the fractional part out to exactly `scale`
+digits (`0.05`, not `0.5`) via a small `_digitCount` helper — pure integer
+arithmetic, no native call, following the `int`→`str` concatenation
+finding documented in `string.py`'s section above. Runtime-verified
+against CPython's own `Decimal` output for mixed-scale arithmetic (`19.99
++ 5.005` correctly produces the 3-decimal `24.995`, not a 2-decimal
+truncation) and for `__str__`, including the zero-padding and negative-
+value cases.
+
+Deliberately **not** named `Decimal`: .NET's own `System.Decimal` is a
+prominent built-in value type, and `random.py`'s `class Random:` already
+confirmed that a Promethium class sharing a short name with a native type
+risks at least a Toffee-only compile failure. Named `DecimalValue`
+preemptively rather than spending a build cycle rediscovering the same
+problem.
+
+## `cmath`
+
+Promethium has no native complex-number type at all — the grammar
+explicitly rejects complex literals ("Elements has no cross-platform
+complex-number type") — so this defines its own `ComplexValue` class rather
+than hooking a native one, the same way `fractions.py`/`decimal.py` define
+their own numeric types. Deliberately not named `Complex`: .NET's
+`System.Numerics.Complex` is a real, plausible collision by the same
+mechanism `random.py`'s `Random` and `decimal.py`'s `Decimal` already hit.
+
+`ComplexValue` supports `__add__`/`__sub__`/`__mul__`/`__truediv__`/
+`__neg__`/`__eq__`/`__abs__`/`conjugate`/`__str__` (all explicit-call-only,
+as usual — `__str__` matches CPython's `(3+4j)`/`(3-4j)`/`4j` shapes, via
+plain `float`→`str` concatenation); module-level `phase`, `polar`, `rect`,
+`sqrt`, `exp`, `log` build directly on `math.py`'s already-verified
+`sin`/`cos`/`exp`/`log`/`atan2` (fully qualified — same reasoning as
+`statistics.py`'s calls to `math.sqrt`). Runtime-verified against
+CPython's own `complex`/`cmath` output for every operation, including
+`sqrt` of a negative real number producing a correct pure-imaginary
+result, and `__str__`'s three distinct formatting shapes.
+
+## `datetime`
+
+Date arithmetic only — `PyDate`/`PyTimeDelta`, not wall-clock time.
+Proleptic-Gregorian day arithmetic (the same algorithm CPython's own
+pure-Python reference implementation uses) is pure integer math, so this
+needs no native call at all; `datetime.now()`/`today()` are **not**
+attempted — reading the real wall clock needs the same kind of per-target
+native-call research `math.py`/`random.py` needed, not yet done for time.
+Not named `Date`/`DateTime`/`TimeDelta`: the first two collide with native
+BCL/platform types by the mechanism `random.py`'s `Random` and
+`decimal.py`'s `Decimal` already confirmed breaks Toffee builds.
+
+Every value is stored and compared through a single day ordinal (day 1 =
+January 1, year 1, matching CPython's `date.toordinal()` convention
+exactly — including `weekday()`'s Monday-is-0 result), so `__add__`/
+`__sub__`/comparisons are just integer arithmetic on that ordinal. No
+`@classmethod` in this language slice, so CPython's `date.fromordinal(...)`
+becomes the module-level `dateFromOrdinal(...)`. Runtime-verified against
+CPython's own `date`/`timedelta` output, including a leap-day (`Feb 29
+2024`) rollover into March.
+
+## `calendar`
+
+`isleap`, `leapdays`, `weekday`, `monthrange`, `month_name(index)`,
+`day_name(index)` — built directly on `datetime.PyDate`'s already-verified
+ordinal/weekday arithmetic (`weekday(...)` is a one-line call into
+`PyDate`) rather than reimplementing it. `month_name`/`day_name` are
+CPython module-level *subscriptable* lists (`calendar.month_name[1]`);
+here they're parameterized functions instead (`month_name(1)`), the same
+convention `string.py` established for its character-class constants.
+Runtime-verified against CPython's own `calendar` output for every
+function, including a leap-February `monthrange`.
+
+## `ipaddress`
+
+Just `IPv4Value`, constructed from four `int` octets — deliberately not
+from a dotted-quad string (`.split('.')` hits the same unconfirmed
+native-string gap as `re`/`csv`). Also deliberately **not** packed into a
+single 32-bit `int` the way CPython's `IPv4Address` stores it internally:
+Promethium's `int` is a *signed* 32-bit `Int32`, and a packed address only
+needs 24 more bits to overflow it — `192.168.1.1` alone would already wrap
+to a negative number, corrupting both its value and its ordering under
+`<`. Storing all four octets separately sidesteps the overflow entirely;
+`__lt__`/`__le__` compare lexicographically over `a, b, c, d`, matching
+CPython's actual address ordering. `is_private`/`is_loopback`/
+`is_multicast` are plain octet-range checks. Runtime-verified against
+CPython's own `IPv4Address` output for every predicate and for ordering.
+
+## `colorsys`
+
+`rgb_to_hsv`/`hsv_to_rgb`/`rgb_to_hls`/`hls_to_rgb`, a direct port of
+CPython's own algorithm. CPython's version computes `i = int(h*6.0)` to
+pick a "sector" of the hue wheel — a float-to-int cast with no confirmed
+working syntax in this codebase (see `math.py`'s notes). Sidestepped by
+keeping the sector index as a `float` throughout (`math.floor(h * 6.0)`)
+and comparing it against float literals (`0.0`, `1.0`, ...) instead of
+switching on an `int` — safe because the sector value is always an exact
+small integer (0–5) even in floating point. Runtime-verified against
+CPython's own `colorsys` output (within float rounding) for a full
+RGB→HSV→RGB and RGB→HLS→RGB round trip.
+
+## `uuid`
+
+Just `uuid4(rng)`, and only as raw components — no canonical hyphenated
+hex string (`int`-to-`str` formatting needs a native per-platform call
+this codebase has never established, same as `fractions.py`'s `__str__`
+note) and no single packed 128-bit value (`int` is a signed 32-bit
+`Int32` — the overflow problem `ipaddress.py` avoids for a 32-bit address
+applies twice as hard to 128 bits). `UUID4Value` instead stores the value
+as four 32-bit words (`w0`..`w3`), generated via a new `RandomGenerator.
+next32()` method (the existing `randint` can't safely cover a full 32-bit
+span — `b - a + 1` for the whole `Int32` range overflows `Int32` itself).
+
+The version (`0100`) and variant (`10xx`) bits are set with `&`/`|`/`>>`,
+already-proven bitwise ops — masking after a right-shift extracts the
+correct bits regardless of whether the shift is arithmetic or logical on a
+negative `int`, so `int`'s signedness doesn't affect correctness here.
+Runtime-verified: generated values report version `4` and variant bits
+`2` (binary `10`, the RFC 4122 variant), two draws from the same generator
+differ, and reconstructing a `UUID4Value` from another's own components
+compares equal. Randomness quality matches `random.py`'s own generator (a
+small LCG, not cryptographically secure) — fine for non-adversarial unique
+IDs, not for anything security-sensitive.
+
+## `textwrap`
+
+Just `wrap(text, width)`/`fill(text, width)` — a greedy word-wrap over
+whitespace-delimited words, found with the same manual scan `string.py`'s
+`capwords` uses (no `.Split`, no regex). `TextWrapper`'s many options
+(indent, tab expansion, hyphen breaking) aren't attempted. A word longer
+than `width` gets its own line rather than being sliced — a deliberate
+simplification of CPython's default `break_long_words=True`. Runtime-
+verified against CPython's own `wrap`/`fill` output.
+
+## `csv`
+
+`parse_line(line)`/`write_row(fields)` — one row at a time, not a
+`reader`/`writer` bound to a file handle (this project's own scope
+excludes filesystem APIs; see Build notes below). Handles CPython's
+default `excel` dialect: comma-separated fields, double-quoted fields
+(needed when a field contains a comma), and `""` as an escaped quote
+inside a quoted field. No custom delimiter/quote character, no embedded
+newlines inside a quoted field, no other `Dialect` options. Built on the
+same manual-character-scan technique as `string.py`'s `capwords`/
+`textwrap.py`'s word-finder. Runtime-verified against CPython's own `csv`
+module for both directions — parsing a quoted-comma-and-escaped-quote line
+and writing a row back out byte-for-byte the same way.
+
+## `configparser`
+
+`parse(lines)` reads INI-style text — already split into lines, since this
+project excludes filesystem APIs and there's no file handle to read from
+directly — into an `OrderedDict[str, OrderedDict[str, str]]` (section name
+→ ordered key/value map), reusing `collections.OrderedDict` rather than
+inventing another ordered-mapping type. Supports `[section]` headers,
+both `key = value` and `key: value` separators (like CPython), `#`/`;`
+comment lines, and blank-line skipping. Not attempted: interpolation
+(`%(x)s`), the `DEFAULT`-section fallback, multi-line values, or writing
+config back out. Uses a hand-rolled `_indexOfChar` rather than native
+`.IndexOf`, deliberately: Toffee's equivalent
+(`rangeOfString(...).location`) returns Cocoa's `NSNotFound` sentinel
+instead of `-1` when missing, the same class of problem `operator.py`'s
+`indexOf` already avoids for `List` — a manual scan sidesteps the
+question entirely. Runtime-verified against CPython's own `ConfigParser`
+output for a two-section config with both separator styles and a comment
+line.
+
+## `difflib`
+
+`ratio(a, b)` and `get_close_matches(word, possibilities, n, cutoff)`,
+built on the real Ratcliff-Obershelp matching-blocks algorithm CPython's
+own `SequenceMatcher` uses — not a simpler LCS approximation, which would
+give a *different* number for many input pairs and break this project's
+standing bar of runtime-verifying against CPython's own output.
+`_findLongestMatch` is a plain O(n·m) scan rather than CPython's
+junk-aware hashing (fine for short strings, not a performance-critical
+diff engine); `get_matching_blocks`'s usual recursive divide-around-the-
+best-match approach is implemented with an explicit `List`-backed stack
+instead of real recursion. CPython's "autojunk" heuristic for very common
+characters in long sequences isn't replicated — irrelevant for the short
+strings this is meant for, but long junk-heavy input could diverge from
+CPython's exact number. Runtime-verified bit-for-bit against CPython's own
+`SequenceMatcher.ratio()` (`0.6153846153846154` for `"kitten"`/`"sitting"`,
+matching exactly) and `get_close_matches`' output and ranking order.
+
+A local variable literally named `match` failed to compile ("Unknown
+identifier 'match', did you mean 'System.Text.RegularExpressions.Match'?")
+— the same shadowing-by-a-native-identifier problem `random.py`'s `Random`
+class and `decimal.py`'s `Decimal` class already hit, but for a local
+variable rather than a type declaration. Renamed to `found`.
+
+## `fnmatch`
+
+Just the pattern matcher itself, `fnmatch(name, pattern)` — not
+`fnmatch.filter`/`glob` (which need filesystem listing, out of scope; see
+Build notes below). The predicate doesn't touch the filesystem at all, so
+it's in scope the same way `csv`/`configparser` are: pure text processing
+over an already-provided string. Supports `*`/`?` via the standard
+iterative two-pointer/backtrack algorithm (no recursion, no regex engine).
+`[seq]`/`[!seq]` character classes aren't attempted — CPython translates
+the whole pattern to a regex internally to support those, a meaningfully
+bigger step than plain `*`/`?` matching. Runtime-verified against
+CPython's own `fnmatch.fnmatch` output, including a `?`-only pattern and a
+non-matching case.
+
+## `shlex`
+
+Just `split(value)` — CPython's POSIX-mode tokenizer: splits on
+whitespace, honors single quotes (contents kept literally) and double
+quotes (with `\"`/`\\` escapes honored inside), and a bare backslash
+outside any quotes escapes the next character. The full stateful
+`shlex.shlex` lexer class (comments, punctuation tokens, `wordchars`
+customization) isn't attempted. Built on the same manual-character-scan
+technique as `csv.py`/`configparser.py`. Runtime-verified against
+CPython's own `shlex.split` output for plain splitting, both quote styles,
+a backslash escape, and repeated/leading whitespace.
+
+## `html`
+
+`escape`/`unescape` for the five entities CPython's own `html.escape`
+produces (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&#x27;`) plus `unescape`'s
+common apostrophe aliases (`&#39;`, `&apos;`) — not the full HTML5
+named-character-reference table or numeric character references
+(`&#NNN;`/`&#xHHH;`), which would need an int-codepoint-to-`str`
+conversion this codebase has never established (different from the
+confirmed decimal `int`→`str` conversion — see `string.py`'s notes). Built
+entirely on the already-confirmed native `.Replace`/`.replace`/
+`.stringByReplacingOccurrencesOfString` (all three replace every
+occurrence by default, no manual loop needed). Order matters: `escape`
+replaces `&` first so the `&` it introduces isn't re-escaped; `unescape`
+replaces `&amp;` last so an already-escaped literal like `&amp;lt;` comes
+back as literal `&lt;` text, not `<`. Runtime-verified byte-for-byte
+against CPython's own `html.escape` output, and a full escape/unescape
+round trip.
+
+## `xml`
+
+`parse(text) -> XmlTreeNode`, in the shape of `xml.etree.ElementTree`
+(`.tag`, `.attrib`, `.text`, `.findall(tag)`), not that module's actual
+namespace. **Not** a hand-rolled parser (an earlier version of this file
+was, before this was found) — internally backed by `RemObjects.Elements.
+RTL.XmlDocument`, a real, cross-platform parser that already ships with
+the Elements RTL (`RTL2/Source/RemObjects.Elements.RTL/XmlDocument.pas`/
+`XmlParser.pas`/`XmlTokenizer.pas`), giving real namespace/CDATA/comment/
+entity handling for free instead of this project's own scoped-down
+approximations. `.text` concatenates *all* nested text recursively
+(`XmlElement.Value`'s own semantics), not just the text immediately
+following the start tag the way CPython's `ElementTree.text` does — a
+deliberate, simpler difference, not an attempt at exact `.tail`-less
+mixed-content parity.
+
+Getting here needed two real fixes, neither of them "just call the API":
+
+- **A reference-wiring fix.** This RTL2 checkout builds its own
+  `Elements.dll`/`.fx`/`.jar` under `RTL2/Bin/<target>/...`, distinct from
+  the "Elements" reference this project already had bare (no `HintPath`)
+  in every per-target `ItemGroup` — which resolved ambiently to a
+  *different*, older `Elements.dll` that doesn't contain this RTL at all
+  (confirmed: calling `RemObjects.Elements.RTL.XmlDocument` failed with
+  "Unknown identifier" until an explicit `HintPath` was added to each
+  `Reference Include="Elements"`/`"libElements"`/`"elements"` block,
+  pointing at the matching RTL2 build output per target — see this
+  project's `.elements` file for the exact paths). Any consumer of the
+  compiled `Promethium.PythonCompatibility` assembly needs the *same*
+  `Elements` `HintPath` wired in too, or the two won't agree on which
+  physical assembly "Elements" is.
+- **Toffee's `for x in someRtlSequence:` erases `x` to a dynamic `id`**,
+  the same generics-erasure behavior already documented for `DefaultDict`'s
+  factory — every property access on the loop variable fails ("No member
+  'LocalName' on type 'id'", and the lowercase Cocoa spelling doesn't help
+  either; the member is inaccessible on `id` entirely). Fixed by
+  re-declaring the loop variable with an explicit type annotation as the
+  first statement inside the loop body (`child: RemObjects.Elements.RTL.
+  XmlElement = rawChild`), which recovers the static type.
+
+Not named `XmlElement`: that's `System.Xml.XmlElement`, a real collision
+by the same mechanism as `Random`/`Decimal`/`Complex`. `XmlNode` (the next
+guess) *also* collided on Cocoa, so this took two renames to land on
+`XmlTreeNode`.
+
+Runtime-verified against CPython's own `ElementTree.fromstring` output:
+tag names, `findall`, attribute values, entity-decoded text content,
+self-closing elements, nested elements, and a leading XML declaration —
+same test cases the earlier hand-rolled version passed, now backed by a
+real parser instead of an approximation.
+
+## `re`
+
+`compile`/`match`/`search`/`fullmatch`/`findall`/`finditer`/`sub`/`split`/
+`escape`, plus a `Pattern` class (from `compile`) and a `Match` class (what
+every match-returning function/method returns). Backed by
+`RemObjects.Elements.RTL.Regex`, a portable regex engine added to RTL2 as a
+side task alongside this module (`RTL2/Source/RemObjects.Elements.RTL/
+Regex.pas`) — literals, `.`, character classes (`[abc]`, `[^abc]`, ranges),
+anchors `^`/`$`, quantifiers `* + ? {m} {m,} {m,n}` (greedy and lazy),
+alternation `|`, capturing/non-capturing groups `(...)`/`(?:...)`, and
+escapes `\d \D \w \W \s \S \b \B`. No backreferences, lookahead/lookbehind,
+named groups, Unicode property classes, or case-insensitive/multiline/
+dotall flags — the engine doesn't support them, so there's no `flags`
+parameter here.
+
+Two real gaps needed working around, not just calling the API:
+
+- **`Regex`'s constructor is a *named* constructor**
+  (`constructor withPattern(...)`), and Promethium has no calling
+  convention that can invoke one — bare positional, `=`-style, and
+  `:`-style keyword args were all tried; the `:` form is a hard Promethium
+  syntax error, not just a label mismatch. Fixed by adding a plain
+  `class method FromPattern(aPattern): not nullable Regex;` factory to
+  `Regex.pas` itself (mirroring `XmlDocument.FromString`, which Promethium
+  already calls fine), rather than trying to change how Promethium calls
+  constructors.
+- **`Regex.Match`/`IsMatch` always search anywhere in the string** — there
+  is no "only try this exact start position" primitive in the engine.
+  Python's `match()` (anchored to the start) and `fullmatch()` (the whole
+  string) need stronger anchoring than that, so `Pattern` actually compiles
+  *three* engines from one source pattern: the raw pattern for
+  `search`/`findall`/`finditer`/`sub`/`split`, `^(?:pattern)` for `match`,
+  and `^(?:pattern)$` for `fullmatch`. Wrapping in a non-capturing group
+  keeps capture-group numbers identical across all three.
+
+Other deliberate deviations from CPython, all forced by fixed function
+return types (a Promethium function can't return "a list of strings, or a
+list of tuples, depending on the pattern" the way CPython's `findall`
+does):
+
+- `findall` always returns whole-match strings (`List[str]`), never group
+  tuples — use `finditer` plus `Match.group(n)` to reach capture groups.
+- `finditer` returns an eagerly-built `List[Match]`, not a lazy iterator —
+  the same stand-in this project already uses everywhere else a CPython
+  generator would otherwise be needed (see `csv`/`difflib`).
+- `Match.start()`/`end()`/`span()` only ever cover the whole match (group
+  0): `RegexMatch` exposes an `Index` for the overall match and each
+  group's matched *text*, but never a per-group start/end offset, so a
+  capture group's own position isn't computable from what the engine
+  returns.
+- `sub`'s replacement string accepts Python-style backreferences (`\1`,
+  `\g<12>`) and is translated to the engine's own `$1`/`$12` syntax before
+  being handed to `Regex.Replace`; a literal `$` in the replacement is
+  escaped to `$$` first so it survives that translation unchanged.
+- `escape` matches CPython 3.7+'s exact special-character set
+  (`()[]{}?*+-|^$\.&~#` plus whitespace) rather than just the characters
+  this engine treats as special, since its job is safe embedding of
+  arbitrary text into a pattern string — CPython's contract, not this
+  engine's.
+
+Runtime-verified against live CPython 3.12's `re` module: `search`/`match`/
+`fullmatch` anchoring (including the "matches somewhere but not at the
+required position" negative cases), `findall`, multi-group `search` with
+`group(1)`/`group(2)`, `sub` with both a literal replacement and a
+`\1`/`\2`-backreference swap, `split`, and `escape` — all outputs matched
+byte-for-byte.
+
+## `heapq`
+
+A binary min-heap, stored directly in a `Promethium.List` — an array-backed
+heap over an existing list, exactly like CPython's own `Lib/heapq.py`, not a
+separate class.
+
+Every function here is overloaded for `int`/`float`/`str` rather than
+generic over `T`, for the same reason `PromethiumBaseLibrary`'s own
+`sorted()`/`min()`/`max()` are (see `Counter`'s note above): unconstrained
+generic `T` has no `<` operator in Promethium, and there's no established,
+tested `[T: IComparable]`-style constraint pattern to fall back on either
+(confirmed: the parser supports generic type-parameter bounds, but nothing
+in `PromethiumBaseLibrary` or this project uses them — adopting that now
+would mean pioneering an untested compiler path, not following precedent).
+
+Two Promethium quirks surfaced while writing this module, one of them
+since fixed:
+
+- **`List`'s bracket-write indexer wasn't reliably usable at the time**:
+  one target rejected direct heap-slot writes with "Default indexer on
+  type ... is read-only", because `PromethiumBaseLibrary.List` didn't
+  declare `__setitem__` yet. This module originally worked around it with
+  a small `_set(...)` helper doing `pop(index)` + `insert(index, value)`,
+  used far more heavily here than in `Counter.py`/`OrderedDict.py`/
+  `DefaultDict.py` since a single heap sift can overwrite many slots.
+  **`List` has since gained a real `__setitem__`**, so this now uses plain
+  `heap[position] = value` directly — the `_set` helper is gone, and every
+  sift function was re-verified against the same test cases it already
+  had.
+- **A concrete (non-generic) function like `sorted(values: List[int])`
+  isn't reachable as a bare call from another module via `DefaultUses`
+  alone** — unlike `len`, which resolves ambiently everywhere in this
+  project. `from Promethium import sorted` doesn't work either (`from X
+  import name` only binds *types* — confirmed by the compiler then reading
+  `sorted` as a type, not a function, and failing with "Unknown type"
+  instead). The only combination that compiled was calling it fully
+  qualified as `Promethium.sorted(values)`, which is what `nsmallest`/
+  `nlargest` do internally.
+
+That last point also shapes how *consumers* of `heapq`/`bisect` need to
+import them: `from heapq import heappush` does **not** work, for the same
+reason (`heappush` is a function, not a type). Add `heapq`/`bisect` to the
+consuming project's `DefaultUses` instead (e.g. `<DefaultUses>Promethium;
+Promethium.PythonCompatibility;heapq;bisect</DefaultUses>`) and call them as
+bare names — verified working end-to-end this way in a scratch consumer
+project, alongside `from collections import ...`'s already-working
+type-import style for the classes above.
+
+Supported, and runtime-verified against CPython's own output for every
+function: `heappush`, `heappop`, `heapreplace`, `heappushpop`, `heapify`,
+`nsmallest(n, values)`, `nlargest(n, values)`.
+
+## `bisect`
+
+Binary search / sorted-insertion helpers over a `Promethium.List`, also
+overloaded for `int`/`float`/`str` only, for the same reason as `heapq`
+above.
+
+Python's `bisect_left(a, x, lo=0, hi=None)` has no direct equivalent for
+`hi=None` here — `hi` is a plain `int` parameter, and Promethium has no
+nullable-int default to spell "unspecified" with — so `-1` is used as the
+"search to the end of the list" sentinel instead, the same kind of concrete
+stand-in `DefaultDict`'s `get`/`pop` already use for CPython's `None`
+defaults elsewhere in this project.
+
+Supported, and runtime-verified against CPython's own output: `bisect_left`,
+`bisect_right`, `bisect` (alias for `bisect_right`, matching CPython),
+`insort_left`, `insort_right`, `insort` (alias for `insort_right`).
+
 ## Build notes
 
 Each module lives in its own top-level `.py` file at the project root and
@@ -215,11 +1023,17 @@ file is itself free of errors — an earlier, incorrect diagnosis blamed a
 "two files with @namespace" compiler limit for a failure that turned out to
 be an unrelated real error whose diagnostics cascaded across files. Every
 `.py` source file (`math.py`, `operator.py`, `Counter.py`, `OrderedDict.py`,
-`ChainMap.py`, `Deque.py`, `DefaultDict.py`, `LenOverloads.py`) is a single
-global `<Compile Include="..." />` item compiled for every target — including
-`DefaultDict.py`, whose Toffee-specific limitation is handled inside the
-source itself (see its section above) rather than by excluding the file from
-a target in the project. Per-target `<ItemGroup Condition="...">` blocks in
+`ChainMap.py`, `Deque.py`, `DefaultDict.py`, `LenOverloads.py`, `heapq.py`,
+`bisect.py`, `itertools.py`, `string.py`, `statistics.py`, `copy.py`,
+`functools.py`, `random.py`, `fractions.py`, `graphlib.py`, `decimal.py`,
+`cmath.py`, `datetime.py`, `calendar.py`, `ipaddress.py`, `colorsys.py`,
+`uuid.py`, `textwrap.py`, `csv.py`, `configparser.py`, `difflib.py`,
+`fnmatch.py`, `shlex.py`, `html.py`, `xml.py`, `re.py`) is a single global
+`<Compile Include="..." />` item compiled
+for every target — including `DefaultDict.py`, whose Toffee-specific
+limitation is handled inside the source itself (see its section above)
+rather than by excluding the file from a target in the project. Per-target
+`<ItemGroup Condition="...">` blocks in
 `PromethiumPythonCompatibility.elements` exist only for actual build
 references (`<Reference Include="Promethium">` and platform references),
 never for source files.
@@ -229,10 +1043,21 @@ All fifteen target configurations build clean from an empty cache:
 targets, and all four `Toffee.*` targets, each with its own `<Reference
 Include="Promethium">` pointing at the matching `PromethiumBaseLibrary`
 build output (`.dll` for Echoes, `.jar` for Cooper, `.fx` for Island/Toffee).
-`Toffee.macOS` intentionally has no `libElements` reference — unlike
-`Toffee.iOS`/`tvOS`/`watchOS`, there is no `libElements.fx` shipped for
-plain macOS in the reference paths, and `PromethiumBaseLibrary` itself
-builds for that exact target without one.
+
+Every target's `<Reference Include="Elements">` (`"libElements"` on
+Toffee, `"elements"` on Cooper) now carries an explicit `HintPath` into
+this checkout's `RTL2/Bin/<target>/...` build output, rather than
+resolving ambiently. This matters beyond style: the ambient resolution
+points at a *different*, older `Elements.dll` that doesn't contain
+`RemObjects.Elements.RTL`'s real classes (`XmlDocument` and friends —
+see `xml.py`'s notes) at all, so pinning the `HintPath` is what makes
+that RTL actually reachable. `Toffee.macOS` — which previously had no
+`libElements` reference at all, since there was no `libElements.fx`
+shipped for plain macOS in the *ambient* reference paths — now has one,
+because RTL2's own build output does ship a `Toffee/macOS/libElements.fx`.
+Any project consuming the compiled `Promethium.PythonCompatibility`
+assembly needs the exact same `HintPath` for its own `Elements` reference,
+or the two won't agree on which physical assembly "Elements" is.
 
 `DefaultUses` must include `Promethium` (needed for bare builtins like
 `len(...)`, which none of `Counter.py`/`OrderedDict.py`/`ChainMap.py`/
@@ -243,6 +1068,26 @@ builds for that exact target without one.
 are ambiently open, which is why each of those files also imports `List`
 (and `ChainMap.py` also `Dictionary`) explicitly rather than relying on
 `DefaultUses` alone.
+
+RTL2's own `Elements.RTL.Island.Android.elements` builds only the
+`x86_64` ABI in its `Debug` configuration (`Release` builds all five —
+`arm64-v8a;armeabi;armeabi-v7a;x86;x86_64` — but `armeabi` fails outright
+against a modern Android SDK, "Unsupported architecture ('armeabi') for
+Android 35", so `Release` isn't a usable workaround). This project's
+`Island.Android` reference points at `arm64-v8a`, so a plain `Debug`
+rebuild of RTL2 silently leaves that specific `.fx` stale — every *other*
+target rebuilds fine, and the only symptom is `Regex`/whatever the new
+type is showing up as "Unknown type" on `Island.Android` alone. Confirmed
+via each target's intermediate build folder (`Debug/<Target>/`): 14 of 15
+targets produced their final `.dll`/`.fx`/`.a`/`.lib`/`.jar`, and
+`Island.Android`'s folder had nothing past `Caches/ResolveReferences.cache`
+— i.e. it never got past reference resolution. Fixed by temporarily adding
+`arm64-v8a` to that one project file's `Debug` `<Architecture>` list,
+rebuilding, then reverting the project file (the architecture list itself
+wasn't meant to change — only that one rebuild needed to happen). Any
+future RTL2 change that needs to reach `Island.Android` in this project
+should rebuild RTL2 the same way (or use this same temporary-widen-then-
+revert trick), not assume `--configuration:Debug` alone covers it.
 
 This milestone intentionally excludes platform bindings, filesystem or process
 APIs, automatic built-in overrides, and modules with complex Python runtime

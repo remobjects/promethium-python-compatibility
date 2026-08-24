@@ -1,4 +1,4 @@
-@namespace("collections")
+﻿@namespace("collections")
 
 from Promethium import List, ValueError
 
@@ -74,8 +74,7 @@ class DefaultDict[Key, Value]:
         if index < 0:
             self._entries.append((key, value))
         else:
-            self._entries.pop(index)
-            self._entries.insert(index, (key, value))
+            self._entries[index] = (key, value)
 
     def get(self, key: Key, default: Value = None) -> Value:
         index: int = self._index_of(key)

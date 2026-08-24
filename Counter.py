@@ -81,8 +81,7 @@ class Counter[T]:
         if index < 0:
             self._entries.append((key, value))
         else:
-            self._entries.pop(index)
-            self._entries.insert(index, (key, value))
+            self._entries[index] = (key, value)
 
     def get(self, key: T, default: int = 0) -> int:
         index: int = self._index_of(key)

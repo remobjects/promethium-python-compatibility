@@ -944,6 +944,120 @@ required position" negative cases), `findall`, multi-group `search` with
 `\1`/`\2`-backreference swap, `split`, and `escape` — all outputs matched
 byte-for-byte.
 
+## `json`
+
+`loads(text) -> JsonValueNode`/`dumps(value) -> str`, a hand-written
+recursive-descent parser/serializer (not `re`-based — JSON's grammar is
+closed and doesn't benefit from a general regex engine) over
+`JsonValueNode`: a tagged-union class with one field per JSON kind
+(`is_null`/`is_bool`/`is_int`/`is_float`/`is_string`/`is_array`/
+`is_object`, and matching `as_*()` accessors), plus module-level factories
+(`json_null()`, `json_bool(v)`, `json_int(v)`, `json_float(v)`,
+`json_string(v)`, `json_array(v)`, `json_object(v)`).
+
+Not named `JsonValue`: that collided on Cocoa with something in the
+referenced `Elements` assembly, the same "duplicate short name" issue as
+`Random`/`Decimal`/`XmlElement` elsewhere in this project. The next guess,
+`JsonNode`, *also* collided — same two-renames-needed story as `xml.py`'s
+`XmlTreeNode`. `JsonValueNode` was the one that stuck.
+
+This is the module that put this session's "reflection and dynamic typing
+are blocked" finding to the test — and deliberately doesn't use `dynamic`
+at all. `typing.Any`/`dynamic` are confirmed working now (see the stdlib
+survey), but JSON's value space is closed (always exactly six kinds), so
+a plain tagged-union class sidesteps needing runtime dynamism here
+entirely — a better fit than reaching for `dynamic` just because it's
+newly available.
+
+CPython's `json` folds a parsed number into `int` or `float` depending on
+whether the source text had a `.`/exponent; this keeps that same split
+(`is_int()` vs `is_float()`) rather than collapsing every number into
+`float`, so `dumps(loads("3"))` round-trips as `"3"`, not `"3.0"`.
+
+Two real native-call gaps surfaced getting this working, both worth
+knowing for any future module:
+
+- **Python's own `float(x)`/`int(x)` conversions are not callable from
+  Promethium at all** — not for numeric widening (`float(someInt)` fails
+  "Unknown identifier 'float'") and not for string parsing (`float(
+  "1.5")` fails differently per target, sometimes resolving to an
+  unrelated native RTL function with an incompatible signature). Fixed
+  with real per-target native calls for string→number parsing
+  (`Double.Parse`/`Int32.Parse` on Echoes/Island, `Double.parseDouble`/
+  `Integer.parseInt` on Cooper, `.doubleValue`/`.intValue` on Toffee), and
+  plain arithmetic promotion (`someInt + 0.0`) instead of a cast for
+  int→float widening.
+- **Native float→string formatting drops the decimal point for a
+  whole-number float** — `3.0` stringifies as `"3"`, not `"3.0"`, on at
+  least one target. `_dumpFloat` appends `.0` when the native-formatted
+  text has no `.`/`e`/`E` in it, so a float round-trips as a float instead
+  of silently becoming indistinguishable from an int.
+
+Not supported, documented rather than silently wrong: `\uXXXX` escape
+sequences in string literals raise `ValueError` (no confirmed portable
+way to turn a parsed code point back into a character was tried across
+all four targets); `dumps` never escapes non-ASCII (CPython's
+`ensure_ascii=True` default) — output is UTF-8 text with non-ASCII passed
+through unchanged.
+
+Runtime-verified against live CPython 3.12's `json` module: nested
+objects/arrays, all six value kinds, negative numbers, exponent notation,
+string escapes (`\n`/`\t`/`\"`), empty array/object, and whitespace
+tolerance around tokens — all outputs matched byte-for-byte.
+
+## `pprint`
+
+`pformat(value) -> str`/`pprint(value)`, multi-line indented formatting
+over `json.JsonValueNode` — the same scope decision `json.py` made and for
+the same reason: Promethium has no single value that can hold an
+arbitrary object outside `typing.Any`/`dynamic` (confirmed working now,
+see the stdlib survey), but reaching for that here would trade a closed,
+well-understood value space for open-ended per-target reflection with no
+real payoff. `JsonValueNode` is already this project's closest thing to
+"a generic value," and pretty-printing loaded JSON/config data is the
+most common real reason to reach for `pprint` in the first place.
+
+Output is **JSON syntax** (`null`/`true`/`false`, double-quoted strings),
+not CPython's Python-literal `pprint` syntax (`None`/`True`/`False`,
+single-quoted strings) — a deliberate deviation, not an oversight: there's
+no arbitrary Python object here to `repr()`, only `JsonValueNode` trees,
+so JSON's own syntax is the more honest fit. In practice this makes
+`pformat`/`pprint` a multi-line, indented counterpart to `json.dumps` —
+verified byte-for-byte identical in shape to CPython's own
+`json.dumps(value, indent=2)` on the same data (nested objects/arrays,
+mixed value kinds, empty array/object).
+
+## `tomllib`
+
+`loads(text) -> JsonValueNode` (always an object at the root) — a
+TOML parser reusing `json.py`'s tagged-union value tree rather than a
+second one, since TOML and JSON describe the same value universe minus
+JSON's `null`. Python 3.11+ ships `tomllib` in the real stdlib; this
+follows the same `loads`-only shape (no `dump`/`dumps` — TOML writing
+wasn't attempted).
+
+Supported: comments, bare and basic-quoted table/key names, dotted paths
+in both table headers (`[a.b.c]`) and key/value assignments (`a.b.c =
+1`), `[table]` headers, `[[array.of.tables]]` headers, inline tables,
+arrays (including ones spanning multiple lines with trailing commas and
+comments), basic strings (same escapes as `json.py`), literal strings
+(`'...'`, no escape processing), integers and floats including `_` digit
+separators (`1_000_000`), and booleans.
+
+Not supported, documented rather than silently wrong: multi-line strings
+(`"""…"""`/`'''…'''`), dates/times (TOML has native date/time literals
+with no equivalent in this project's closed value set — everything here
+is null/bool/int/float/string/array/object), hex/octal/binary integer
+literals, and `inf`/`nan` float literals. Any of these in the source
+raises `ValueError`.
+
+Runtime-verified against live CPython 3.12's `tomllib`: nested table
+headers, array-of-tables, inline tables, arrays, dotted key/value paths,
+comments, underscore-separated numbers, and mixed value kinds — output
+matched `json.dumps` on the same parsed structure byte-for-byte, in both
+directions (a full multi-section document, and a standalone dotted-key
+case).
+
 ## `heapq`
 
 A binary min-heap, stored directly in a `Promethium.List` — an array-backed
@@ -1028,7 +1142,8 @@ be an unrelated real error whose diagnostics cascaded across files. Every
 `functools.py`, `random.py`, `fractions.py`, `graphlib.py`, `decimal.py`,
 `cmath.py`, `datetime.py`, `calendar.py`, `ipaddress.py`, `colorsys.py`,
 `uuid.py`, `textwrap.py`, `csv.py`, `configparser.py`, `difflib.py`,
-`fnmatch.py`, `shlex.py`, `html.py`, `xml.py`, `re.py`) is a single global
+`fnmatch.py`, `shlex.py`, `html.py`, `xml.py`, `re.py`, `json.py`,
+`pprint.py`, `tomllib.py`) is a single global
 `<Compile Include="..." />` item compiled
 for every target — including `DefaultDict.py`, whose Toffee-specific
 limitation is handled inside the source itself (see its section above)

@@ -160,6 +160,9 @@
     <Compile Include="html.py" />
     <Compile Include="xml.py" />
     <Compile Include="re.py" />
+    <Compile Include="json.py" />
+    <Compile Include="pprint.py" />
+    <Compile Include="tomllib.py" />
     <Folder Include="collections">
       <Virtual>True</Virtual>
     </Folder>

@@ -163,6 +163,16 @@
     <Compile Include="json.py" />
     <Compile Include="pprint.py" />
     <Compile Include="tomllib.py" />
+    <Compile Include="time.py" />
+    <Compile Include="queue.py" />
+    <Compile Include="base64.py" />
+    <Compile Include="binascii.py" />
+    <Compile Include="codecs.py" />
+    <Compile Include="struct.py" />
+    <Compile Include="hashlib.py" />
+    <Compile Include="hmac.py" />
+    <Compile Include="PyByteArray.py" />
+    <Compile Include="unittest.py" />
     <Folder Include="collections">
       <Virtual>True</Virtual>
     </Folder>

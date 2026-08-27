@@ -30,3 +30,7 @@ def len[T](value: Deque[T]) -> int:
 
 def len[Key, Value](value: DefaultDict[Key, Value]) -> int:
     return value.__len__()
+
+
+def len(value: PyByteArray) -> int:
+    return value.__len__()

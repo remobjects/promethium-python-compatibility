@@ -283,6 +283,51 @@ target uniformly — see Build notes below), the limitation is handled inside
 silently misbehaving; every other target takes the normal auto-vivify path
 in the `else` branch.
 
+## `bytearray`
+
+`PyByteArray` (in `Promethium`, alongside `bytes` itself, not under any
+module namespace — a builtin in CPython too — named `Py`-prefixed on the
+same established Cocoa/Toffee short-name-collision precedent as
+`PyQueue`/`PyDate`, not a confirmed collision). A mutable, growable byte
+sequence, unlike Promethium's own `bytes` (a fixed-size native `Byte[]`
+with no `+` operator and no `bytes(n)` zero-fill constructor — see
+`struct.py`'s notes). Indexed access/mutation (`__getitem__`/
+`__setitem__`, `append`/`extend`/`pop`/`clear`/`copy`) is backed by a
+plain `List[int]`, the same substrate `Deque`/`Counter`/etc. use; `len()`
+works via the same `LenOverloads.py` overload-set mechanism they use too.
+
+`to_bytes()` — converting the list back into a real `bytes` value of its
+exact runtime length — used to be the genuinely-impossible part: the only
+previously-confirmed way to build a `bytes` value was a compile-time-
+sized literal (`struct.py`'s "declare a same-length literal, then assign
+into its indices" idiom), which can't work when the length isn't known
+until runtime. **This is now solved**: `RemObjects.Elements.RTL.Binary` —
+found while looking for a `bytearray` substrate, not previously exercised
+in this project — is a genuine cross-platform *growable* byte buffer
+(backed per-target by `MemoryStream`/`NSMutableData`/
+`ByteArrayOutputStream`): `Binary()` starts empty, `.Write(someBytes)`
+appends, `.ToArray()` hands back a `bytes`-compatible native array sized
+to exactly what was written. Confirmed with a standalone probe before
+building `PyByteArray` on it — three separate `.Write()` calls followed
+by `.ToArray()` round-tripped the right bytes in the right order, and
+`.Length` matched the real accumulated count. This corrects `struct.py`'s
+and `hashlib.py`'s "no dynamically-sized `bytes` allocation exists" note
+— dynamic allocation exists, it just isn't a `bytes`-literal-shaped API;
+worth reaching for on any future module that needs to build a
+variable-length `bytes` result (a `zlib`/compression output buffer, for
+instance).
+
+`to_bytes()` writes one byte at a time (O(n) native `Write` calls) rather
+than batching contiguous runs into fewer calls — correct, not fast,
+matching `Deque`'s own documented "O(n) appendleft, real ring-buffer is
+future work" trade-off.
+
+Runtime-verified against CPython's own `bytearray` for every operation
+above (`append`, indexed read/write, `extend`, `pop`, `len`, the
+`bytearray(n)` zero-fill constructor, `bytearray(existing_bytes)`, and
+`copy()`'s independence from the original) — every result matched
+exactly.
+
 ## `itertools`
 
 An eager subset of Python's `itertools`: every function returns a
@@ -633,15 +678,12 @@ result, and `__str__`'s three distinct formatting shapes.
 
 ## `datetime`
 
-Date arithmetic only — `PyDate`/`PyTimeDelta`, not wall-clock time.
-Proleptic-Gregorian day arithmetic (the same algorithm CPython's own
-pure-Python reference implementation uses) is pure integer math, so this
-needs no native call at all; `datetime.now()`/`today()` are **not**
-attempted — reading the real wall clock needs the same kind of per-target
-native-call research `math.py`/`random.py` needed, not yet done for time.
-Not named `Date`/`DateTime`/`TimeDelta`: the first two collide with native
-BCL/platform types by the mechanism `random.py`'s `Random` and
-`decimal.py`'s `Decimal` already confirmed breaks Toffee builds.
+Mostly date arithmetic — `PyDate`/`PyTimeDelta`. Proleptic-Gregorian day
+arithmetic (the same algorithm CPython's own pure-Python reference
+implementation uses) is pure integer math, so this needs no native call
+at all. Not named `Date`/`DateTime`/`TimeDelta`: the first two collide
+with native BCL/platform types by the mechanism `random.py`'s `Random`
+and `decimal.py`'s `Decimal` already confirmed breaks Toffee builds.
 
 Every value is stored and compared through a single day ordinal (day 1 =
 January 1, year 1, matching CPython's `date.toordinal()` convention
@@ -651,6 +693,20 @@ exactly — including `weekday()`'s Monday-is-0 result), so `__add__`/
 becomes the module-level `dateFromOrdinal(...)`. Runtime-verified against
 CPython's own `date`/`timedelta` output, including a leap-day (`Feb 29
 2024`) rollover into March.
+
+`today() -> PyDate` reads the real wall clock (UTC) — originally cut,
+"reading the real wall clock needs the same kind of per-target native-
+call research `math.py`/`random.py` needed, not yet done for time." That
+research is done now (see `time.py`): a bare `DateTime` identifier
+resolves inconsistently per target (sometimes the platform-native BCL
+type, sometimes nothing), so `today()` calls the fully-qualified
+`RemObjects.Elements.RTL.DateTime.UtcNow` explicitly and reads its
+`Year`/`Month`/`Day` — RTL2's `DateTime` is already a genuine cross-
+platform abstraction, so no `defined("ECHOES")`-style branching was
+needed here at all. Runtime-verified against
+`datetime.datetime.utcnow().date()`'s year/month/day/weekday, same day.
+Still no `now()` (date *and* time-of-day together) — that needs an hour/
+minute/second-carrying type this module doesn't have yet.
 
 ## `calendar`
 
@@ -1058,6 +1114,288 @@ matched `json.dumps` on the same parsed structure byte-for-byte, in both
 directions (a full multi-section document, and a standalone dotted-key
 case).
 
+## `time`
+
+Just `time() -> float` — Unix epoch seconds, reading the real wall clock.
+Closes a gap `datetime.py` explicitly flagged early on ("reading the
+actual wall clock needs the same kind of per-target native-call research
+`math.py`'s functions and `random.py`'s RNG needed, which hasn't been
+done for time") now that that research has matured. The real surprise:
+no per-target `defined("ECHOES")`-branching was needed at all —
+`RemObjects.Elements.RTL.DateTime` (RTL2's own date/time class, reached
+via its fully-qualified name; a *bare* `DateTime` resolves
+inconsistently per target and shouldn't be relied on) is already a
+genuine cross-platform abstraction with its own `UtcNow`/
+`ToUnixTimeSeconds()`, backed internally by `java.util.Calendar` on
+Cooper, `NSDate` on Toffee, and the platform's native `DateTime` on
+Echoes/Island — the per-target work this module would otherwise have
+needed to do by hand was already done, inside RTL2. Runtime-verified
+against live CPython's `time.time()` — same Unix second.
+
+## `queue`
+
+`PyQueue[T]`/`PyLifoQueue[T]`, thin wrappers over the already-shipped
+`collections.Deque`. Not named `Queue`/`LifoQueue`: `Queue` collides with
+a native BCL type by the same mechanism `Random`/`Decimal`/`DateTime`
+already confirmed elsewhere in this project — same `Py`-prefix convention
+`datetime.py`'s `PyDate`/`PyTimeDelta` already established for exactly
+this situation.
+
+No real concurrency: this language slice has no threading primitives
+(the same reason `asyncio`/generators are excluded), so `put`/`get` never
+actually block — they raise `Promethium.ValueError` on overflow/underflow
+instead of CPython's queue-specific `queue.Full`/`queue.Empty` exceptions
+(no custom exception types beyond reusing `ValueError`, same convention
+`graphlib.py` documents). `put_nowait`/`get_nowait` are aliases for
+`put`/`get`, since there's no blocking variant to be the non-blocking
+alternative *to*. `maxsize` uses `-1` as the "unbounded" sentinel, same
+concrete stand-in for CPython's default this project uses elsewhere
+(`Deque.maxlen`, `bisect.py`'s `hi`).
+
+Finding this module's real bug needed isolating it first: a *fresh*
+generic class (`PyQueue[T]`, not previously used anywhere) failed to
+resolve from a separate consumer project — both bare and fully
+namespace-qualified — even though the compiled assembly genuinely
+contained it (confirmed via `strings`). Root cause: **a generic class
+needs an explicit `from <namespace> import <ClassName>` to resolve
+cross-project at all** — bare `DefaultUses` resolution, which works fine
+for non-generic classes and free functions, doesn't work for generic
+ones. This was already this project's established practice for `Counter`/
+`OrderedDict`/`DefaultDict`/`Deque` (always explicitly imported) without
+ever being diagnosed as load-bearing rather than just tidy — now it is.
+
+Runtime-verified: FIFO order (`PyQueue`), LIFO order (`PyLifoQueue`), and
+`full()` on a bounded queue — all matched expected CPython `queue`
+semantics.
+
+## `base64`
+
+`b64encode(data: bytes) -> str`/`b64decode(data: str) -> bytes`, built
+directly on `RemObjects.Elements.RTL.Convert`'s already-implemented
+`ToBase64String`/`Base64StringToByteArray` (a hand-rolled codec, no
+native crypto library dependency) — no new algorithm needed at all, the
+same way `re.py` needed none once RTL2 had a regex engine.
+
+The real story here is what this module corrects: the survey's "no
+bytes/binary-data type — blocked" finding was wrong the same way native
+string manipulation, `re`, and reflection/dynamic typing were — assumed
+blocked because untested, not because it's actually unavailable. `bytes`
+is a real, already-implemented Promethium v1 language feature: `b'...'`
+literals and the `bytes` type annotation both lower directly to the
+target's native `Byte[]` array. A native byte array's length is its
+`.Length` property (not `len(...)`, which has no `bytes` overload).
+
+Signature deviates from CPython on purpose: CPython's `b64encode(bytes)
+-> bytes` returns the base64 alphabet as ASCII *bytes*, which callers
+almost always immediately `.decode('ascii')` into a `str` anyway — this
+returns `str` directly and skips that redundant step, with the matching
+shortcut on `b64decode`'s input.
+
+`RemObjects.Elements.RTL.Convert` is always fully qualified: a bare
+`Convert` risks the same inconsistent per-target resolution `time.py` hit
+with a bare `DateTime`, and plausibly collides with the platform's own
+BCL `System.Convert`, which has same-named `ToBase64String`/
+`FromBase64String` methods of its own.
+
+Runtime-verified against live CPython's `base64.b64encode`/`b64decode`:
+encoded text and every decoded byte matched exactly.
+
+## `binascii`
+
+`hexlify(data: bytes) -> str`/`unhexlify(data: str) -> bytes`, built
+directly on `RemObjects.Elements.RTL.Convert`'s `ToHexString`/
+`HexStringToByteArray` — same story as `base64.py`: no new algorithm
+needed, RTL2 already had it. Same deliberate `str`-not-`bytes` signature
+deviation as `base64.py`, for the same reason (CPython's own `hexlify`
+returns ASCII bytes that callers almost always immediately decode to
+`str` anyway).
+
+One real discrepancy caught by runtime comparison, not assumed:
+`Convert.ToHexString` produces **uppercase** hex digits, while CPython's
+`binascii.hexlify` produces lowercase — `hexlify` lowercases the result
+to match, using the same native per-target `.ToLower()`/`.toLowerCase()`/
+`.lowercaseString` idiom `string.py`'s `_lower` already established.
+`unhexlify` accepts the lowercased text back fine (RTL2's parser isn't
+case-sensitive on input).
+
+Runtime-verified against live CPython's `binascii.hexlify`/`unhexlify`:
+hex text and every decoded byte matched exactly.
+
+Also `crc32(data: bytes) -> int` — the one function here that's a real
+algorithm, not a `Convert` passthrough: the standard reflected bit-by-bit
+CRC-32 (polynomial `0xEDB88320`, the same one CPython's `binascii.crc32`/
+`zlib.crc32` both use), pure bit arithmetic, no native call, same
+category as `struct.py`. Two things needed care for Promethium's signed
+32-bit `int`: `0xFFFFFFFF` (the algorithm's initial/final all-ones value)
+is spelled `-1` (same bit pattern, unambiguous regardless of signedness);
+and the algorithm's per-bit right-shift must be *logical* (zero-fill),
+but Promethium's `>>` on a negative value is arithmetic (sign-extending)
+— corrected with a small `_logicalShiftRight1` helper that masks off bit
+31 after the shift, the only bit an arithmetic and a logical single-bit
+right-shift can ever disagree on. Returns the same bit pattern CPython's
+unsigned result has, reinterpreted as signed — inputs whose CRC is `>=
+0x80000000` read back as the equivalent negative `int`, same
+representational limit `struct.py` already documents for
+`unpack_uint32_*`. Runtime-verified against live CPython's
+`binascii.crc32` across several inputs (empty, ASCII text, and raw bytes
+including a value that exercises the negative-representation case) —
+matched exactly, bit pattern for bit pattern.
+
+## `codecs`
+
+`encode(s, encoding="utf-8") -> bytes`/`decode(data, encoding="utf-8") ->
+str`, UTF-8 only, built on `RemObjects.Elements.RTL.Encoding.UTF8`'s
+already-implemented `GetBytes`/`GetString` — no new native call needed,
+same story as `base64.py`/`binascii.py` reusing `Convert`. Closes the
+loop on this session's "bytes/binary-data isn't blocked" correction:
+`base64`/`binascii` convert between `bytes` and a textual representation
+of those bytes; this is the piece that gets from an ordinary `str` to
+`bytes` (UTF-8) and back. Only `"utf-8"` is accepted — CPython's `codecs`
+supports dozens of encodings via a registry; any other name here raises
+`Promethium.ValueError`.
+
+Runtime-verified round-tripping real multi-byte UTF-8 (`café`'s `é`,
+`[0xC3, 0xA9]`) byte-for-byte against CPython. Finding this needed
+working around a **separate, genuine bug** first: a Promethium `.py`
+source file mishandles non-ASCII characters typed *directly* into a
+string literal — `"café"` written literally in source silently becomes
+`caf?` by runtime, even though the source file's own bytes on disk are
+valid UTF-8 (confirmed by inspecting them directly — not an editor/save
+encoding problem, something in how the compiler reads non-ASCII source
+text). Not a bug in this module, `bytes`, or RTL2's `Encoding` — a
+`bytes` literal built from `\xNN` hex escapes (`b"caf\xc3\xa9"`) round-
+trips through `decode`/`encode` perfectly; only literal non-ASCII
+characters typed directly into Promethium source are affected. Worth
+knowing for any future module that wants non-ASCII text in its own test
+cases or literals.
+
+## `struct`
+
+`pack_uint8`/`unpack_uint8`, `pack_uint16_le`/`_be` +
+`unpack_uint16_le`/`_be`, `pack_uint32_le`/`_be` + `unpack_uint32_le`/
+`_be` — fixed-width integer packing, both byte orders. CPython's actual
+API is a single `pack(fmt, *values)`/`unpack(fmt, data)` pair driven by a
+format string and variadic arguments; that's not reproducible here since
+`*args`/`**kwargs` are outside this language slice entirely. Named
+per-width, per-byte-order functions instead, matching this project's
+established "one CPython generic function becomes several concrete ones"
+pattern (`heapq`/`bisect`/`statistics`'s int/float/str overloads).
+
+Pure bit arithmetic — no native call of any kind, same as `datetime.py`'s
+proleptic-Gregorian day math. Building a `bytes` value of a specific size
+needed its own small discovery: `bytes` concatenation (`b"\x01" +
+b"\x02"`) doesn't compile ("cannot find operator to evaluate `<array
+literal>` + `<array literal>`"), but a fixed-size `bytes` literal's
+individual elements *can* be assigned after construction (`data: bytes =
+b"\x00\x00"; data[0] = 1`) — confirmed working and used throughout as the
+allocation idiom.
+
+Named `uint8`/`uint16`/`uint32` (CPython's `B`/`H`/`I` format codes), but
+Promethium's `int` is signed 32-bit — unpacking 4 bytes whose top bit is
+set produces the same bit pattern a signed 32-bit `int` would have, which
+reads back negative rather than as a value `>= 0x80000000`. A
+representational limit, not a bug (same class of thing `ipaddress.py`/
+`uuid.py` already document) — `pack_*`/`unpack_*` are exact inverses of
+each other regardless, round-tripping any 32-bit bit pattern losslessly
+even when the signed *meaning* differs from what a real `uint32` would
+say.
+
+No float packing (`f`/`d` format codes) in this pass — needs a native
+bit-reinterpretation call not attempted here, a scope cut not an
+oversight.
+
+Runtime-verified against live CPython's `struct.pack`/`unpack`: `uint8`,
+`uint16` both byte orders, `uint32` both byte orders — every byte and
+every round-tripped value matched exactly.
+
+## `hashlib`
+
+`md5(data: bytes) -> bytes` (16-byte digest) / `md5_hexdigest(data:
+bytes) -> str`, and `sha256(data: bytes) -> bytes` (32-byte digest) /
+`sha256_hexdigest(data: bytes) -> str`. Full hand-rolled implementations
+of RFC 1321 (MD5) and FIPS 180-4 (SHA-256) — no cross-platform hash
+primitive was found anywhere in RTL2 (only a Toffee-only `CC_SHA1`
+TLS-certificate-fingerprint helper, not reusable), the same situation
+`re.py` was in before RTL2 got a regex engine as a side task. This is
+that side task done in pure Promethium instead: no native call anywhere
+in the file, only bit arithmetic, same category as `struct.py`/
+`binascii.py`'s `crc32`.
+
+Both algorithms needed the same two Promethium-specific problems solved:
+
+- **No dynamically-sized `bytes` allocation exists** (`bytes(n)` isn't a
+  valid constructor — see `struct.py`'s notes). Both hashes need to work
+  over a *padded* message whose length depends on the input, which would
+  ordinarily need a runtime-allocated padded buffer. Sidestepped with a
+  virtual-byte function per algorithm (`_virtualByte` for MD5,
+  `_sha256VirtualByte` for SHA-256— separate because SHA-256 packs bytes
+  **big-endian** and appends its bit-length field big-endian, the mirror
+  image of MD5's little-endian): computes what byte *would* be at any
+  position of the conceptually-padded message (the real input, the
+  single `0x80` marker, zero padding, or the trailing 8-byte bit-length
+  field) without ever materializing the padded buffer — only the
+  original `data` and a fixed-size digest buffer are ever actually
+  allocated. Each takes a `prefix`/`suffix` buffer pair rather than a
+  single buffer, so `md5()`/`sha256()` can hash the *logical*
+  concatenation of two buffers without ever materializing a combined
+  one — `md5(data)`/`sha256(data)` are just `_md5Core(data, data.Length,
+  data, 0)`/`_sha256Core(data, data.Length, data, 0)` (an unused
+  zero-length suffix); this exists so `hmac.py` can build `(key XOR pad)
+  || message` without a `bytes` concatenation operator, which still
+  doesn't exist.
+- **Promethium's `int` is signed 32-bit with an arithmetic `>>`**, but
+  both algorithms need a logical right shift (MD5's left-rotate is half
+  of one; SHA-256 uses both a rotate and a plain logical shift directly).
+  `_logicalShiftRight` generalizes the single-bit trick `crc32` already
+  established (`(value >> 1) & 0x7FFFFFFF` is unconditionally correct for
+  one bit, since that's the only bit an arithmetic and logical shift-by-1
+  can ever disagree on) by simply repeating it; `_rotr32` (SHA-256's
+  right-rotate) is just `_rotl32(value, 32 - amount)`. Bitwise NOT is
+  `value ^ -1`. 32-bit addition wraps silently on overflow — confirmed
+  directly (`2147483647 + 1` produces `-2147483648`, no exception) —
+  exactly the modular arithmetic both compression functions need.
+
+Both only support inputs whose *bit* length fits in 32 bits (message
+length under ~268MB) — a curated-scope limit, not a correctness gap for
+realistic input sizes.
+
+`md5`/`md5_hexdigest` runtime-verified against all seven of RFC 1321's
+own official MD5 test vectors; `sha256`/`sha256_hexdigest` against four
+of NIST's own SHA-256 test vectors (including two multi-block messages).
+Both cross-checked against live CPython's `hashlib.md5`/`hashlib.sha256`
+on the same inputs — every digest matched exactly (SHA-256 matched on
+the first attempt; MD5 needed one real bug found and fixed:
+`_sTable()`'s construction interleaved all four 4-shift groups on each of
+four outer loop passes instead of repeating each group four times before
+moving to the next — a loop-nesting mistake, not a bit-arithmetic one).
+
+## `hmac`
+
+`hmac_md5(key: bytes, message: bytes) -> bytes` / `hmac_md5_hexdigest`,
+and `hmac_sha256(key: bytes, message: bytes) -> bytes` /
+`hmac_sha256_hexdigest`, built entirely on `hashlib`'s hand-rolled MD5/
+SHA-256 via their `_md5Core`/`_sha256Core` two-buffer primitives. RFC
+2104's algorithm: `H((K' XOR opad) || H((K' XOR ipad) || message))`,
+where `K'` is the key zero-padded to the hash's 64-byte block size (both
+MD5 and SHA-256 share that block size), or hashed down (to 16 bytes for
+MD5, 32 for SHA-256) then zero-padded, if the key is longer than 64
+bytes. `_keyBlockMd5`/`_keyBlockSha256` are near-identical but kept
+separate rather than parameterized over which hash to call — a
+named-function-as-value only works as a lambda here, not a plain
+function reference, so passing `hashlib.md5`/`hashlib.sha256` in wasn't
+a safe bet to make per-target.
+
+Runtime-verified against cases drawn from RFC 2202's official HMAC test
+vectors — a short key/message, the empty key and empty message, a short
+key ("Jefe") with a longer message, and (the case that actually exercises
+the hash-down path) an 80-byte key with a plain-text message — for both
+HMAC-MD5 and HMAC-SHA256, cross-checked against live CPython's
+`hmac.new(key, msg, hashlib.md5 / hashlib.sha256).hexdigest()`; every
+digest matched exactly. Also re-verified `hashlib.md5`/`hashlib.sha256`
+themselves still produce correct digests after being generalized into
+two-buffer cores — the refactor changed no observable behavior for the
+single-buffer case.
+
 ## `heapq`
 
 A binary min-heap, stored directly in a `Promethium.List` — an array-backed
@@ -1127,6 +1465,49 @@ Supported, and runtime-verified against CPython's own output: `bisect_left`,
 `bisect_right`, `bisect` (alias for `bisect_right`, matching CPython),
 `insort_left`, `insort_right`, `insort` (alias for `insort_right`).
 
+## `unittest`
+
+A curated core, not the full framework: `TestCase` with `assertEqual`/
+`assertNotEqual` (overloaded for `int`/`float`/`str`/`bool`, same
+per-type-overload convention `heapq.py`/`bisect.py` use) plus
+`assertTrue`/`assertFalse`, each *recording* a pass/fail rather than
+raising — `passed`/`failed` counters, a `failures: List[str]` of
+messages, and `summary() -> str`. Deliberately not exception-based, the
+same "concrete stand-in, not exact parity" choice as `struct.py`'s
+no-`*args` deviation.
+
+`assertEqual`/`assertNotEqual` don't have a single `dynamic`-typed
+overload covering every type, unlike `json.py`'s tagged-union approach —
+equality between two `dynamic` values was never confirmed to lower
+correctly (only *arithmetic* operators on `dynamic` were exercised, and
+even those needed explicit class-level field annotations to avoid a real
+multi-target bug — see the dynamic-typing notes), so this sticks to
+known-safe per-type overloads instead of risking it.
+
+Deliberately out of scope: `unittest.main()`'s auto-discovery — scanning
+a `TestCase` subclass for `test_*`-prefixed methods and invoking each via
+reflection. RTL2's `Reflection` namespace exists but has never been
+exercised end-to-end in this project; getting method discovery *and*
+dynamic invocation *and* per-test exception isolation all working across
+15 targets is a much bigger lift than the assertion core, and tests here
+are driven by hand instead — instantiate a `TestCase`, call its `assert*`
+methods directly, check `summary()`/`failed`.
+
+Writing this also confirmed a new instance of the `float(x)`/`int(x)`
+conversion gap (see that memory note): `str(x)` isn't callable either,
+same "Unknown identifier" failure on every target. Fixed the same way
+`json.py`'s `_dumpFloat` already had to: string concatenation's `+`
+stringifies a numeric/bool operand automatically once a string is
+already on one side (`"expected " + expected` needs no wrapper at all;
+only a bare leading numeric, as in `summary()`, needs the `"" + value`
+empty-literal-prefix trick).
+
+Runtime-verified: a passing case and a failing case for each of
+`assertEqual`/`assertNotEqual`/`assertTrue`/`assertFalse` (eight checks
+total, spanning `int`/`str` for the equality assertions) produced the
+expected `5 passed, 5 failed` summary, correct `passed`/`failed` counts,
+and the expected five failure messages verbatim.
+
 ## Build notes
 
 Each module lives in its own top-level `.py` file at the project root and
@@ -1143,7 +1524,9 @@ be an unrelated real error whose diagnostics cascaded across files. Every
 `cmath.py`, `datetime.py`, `calendar.py`, `ipaddress.py`, `colorsys.py`,
 `uuid.py`, `textwrap.py`, `csv.py`, `configparser.py`, `difflib.py`,
 `fnmatch.py`, `shlex.py`, `html.py`, `xml.py`, `re.py`, `json.py`,
-`pprint.py`, `tomllib.py`) is a single global
+`pprint.py`, `tomllib.py`, `time.py`, `queue.py`, `base64.py`,
+`binascii.py`, `codecs.py`, `struct.py`, `hashlib.py`, `hmac.py`,
+`PyByteArray.py`, `unittest.py`) is a single global
 `<Compile Include="..." />` item compiled
 for every target — including `DefaultDict.py`, whose Toffee-specific
 limitation is handled inside the source itself (see its section above)

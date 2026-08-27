@@ -1,13 +1,17 @@
 @namespace("datetime")
 
-# A small, opt-in subset of Python's datetime module: just date arithmetic
-# (`PyDate`/`PyTimeDelta`), not wall-clock time. Proleptic-Gregorian day
-# arithmetic (the same algorithm CPython's own pure-Python reference
-# implementation uses) is pure integer math — no native call needed for any
-# of this. `datetime.now()`/`today()` are NOT attempted: reading the actual
-# wall clock needs the same kind of per-target native-call research
-# `math.py`'s functions and `random.py`'s RNG needed, which hasn't been
-# done for time — a deliberate scope cut, not an oversight.
+# A small, opt-in subset of Python's datetime module: mostly date
+# arithmetic (`PyDate`/`PyTimeDelta`), not wall-clock time. Proleptic-
+# Gregorian day arithmetic (the same algorithm CPython's own pure-Python
+# reference implementation uses) is pure integer math — no native call
+# needed for any of this. `now()`/full wall-clock time-of-day were
+# originally NOT attempted, deferred pending the native-call research
+# `time.py` has since done — `today()` (just the date, UTC) is now
+# implemented on top of that, reusing `RemObjects.Elements.RTL.DateTime`'s
+# `UtcNow`/`Year`/`Month`/`Day` the same way `time.py`'s `time()` reuses
+# its `ToUnixTimeSeconds()`. Still no `now()` (date *and* time together)
+# — that needs an hour/minute/second-carrying type this module doesn't
+# have yet, a further scope cut, not an oversight.
 #
 # Not named `Date`/`DateTime`/`TimeDelta`: `Date`/`DateTime` collide with
 # native BCL/platform types by the same mechanism `random.py`'s `Random`
@@ -147,3 +151,8 @@ class PyDate:
 def dateFromOrdinal(ordinal: int) -> PyDate:
     parts: tuple[int, int, int] = _ordinalToYmd(ordinal)
     return PyDate(parts[0], parts[1], parts[2])
+
+
+def today() -> PyDate:
+    now: RemObjects.Elements.RTL.DateTime = RemObjects.Elements.RTL.DateTime.UtcNow
+    return PyDate(now.Year, now.Month, now.Day)

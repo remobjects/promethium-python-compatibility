@@ -29,3 +29,51 @@ def b64encode(data: bytes) -> str:
 
 def b64decode(data: str) -> bytes:
     return RemObjects.Elements.RTL.Convert.Base64StringToByteArray(data)
+
+
+# URL-safe variants: swap `+`/`/` for `-`/`_` (padding `=` is left as-is,
+# matching CPython's own `urlsafe_b64encode`/`urlsafe_b64decode`, which
+# don't strip it either). Built with `string.py`'s already-proven
+# `_length`/`_substring` per-target-safe helpers (called fully-qualified,
+# no import needed — the "underscore is convention, not compiler-enforced
+# privacy" finding from `hashlib`/`hmac`) rather than reaching for a new,
+# unconfirmed native `.Replace` call across all four platforms.
+
+def _toUrlSafe(value: str) -> str:
+    result: str = ""
+    length: int = string._length(value)
+    i: int = 0
+    while i < length:
+        ch: str = string._substring(value, i, 1)
+        if ch == "+":
+            result = result + "-"
+        elif ch == "/":
+            result = result + "_"
+        else:
+            result = result + ch
+        i += 1
+    return result
+
+
+def _fromUrlSafe(value: str) -> str:
+    result: str = ""
+    length: int = string._length(value)
+    i: int = 0
+    while i < length:
+        ch: str = string._substring(value, i, 1)
+        if ch == "-":
+            result = result + "+"
+        elif ch == "_":
+            result = result + "/"
+        else:
+            result = result + ch
+        i += 1
+    return result
+
+
+def urlsafe_b64encode(data: bytes) -> str:
+    return _toUrlSafe(b64encode(data))
+
+
+def urlsafe_b64decode(data: str) -> bytes:
+    return b64decode(_fromUrlSafe(data))

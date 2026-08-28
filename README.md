@@ -337,15 +337,46 @@ are outside the initial language slice). Runtime-verified against CPython's
 own output: `chain` (2- and 3-argument overloads — no `*args` support),
 `repeat(value, times)`, `islice`, `compress`, `accumulate` (`int`/`float`
 overloads, like `sum()`), `product`, `permutations`, `combinations`,
-`combinations_with_replacement`, `zip_longest`.
+`combinations_with_replacement`, `zip_longest`, `pairwise`, `batched`,
+`takewhile`, `dropwhile`, `filterfalse`.
 
 Infinite generators (`count`, `cycle`, no-`times` `repeat`) have no eager
-equivalent and aren't attempted. Predicate-taking functions (`takewhile`,
-`dropwhile`, `filterfalse`, `starmap`) aren't attempted either: there's no
-confirmed, tested way to type a callable/predicate parameter in this
-codebase yet (`DefaultDict`'s untyped, `.Invoke()`-only factory field is the
-only precedent, and it isn't enough to build a generic predicate parameter
-on).
+equivalent and aren't attempted.
+
+`pairwise(values) -> List[tuple[T, T]]` and `batched(values, n) -> List
+[List[T]]` are plain list operations, no predicate needed, generic over
+`T`, and work on every target.
+
+`takewhile(pred, values: List[int]) -> List[int]`/`dropwhile`/
+`filterfalse` (all `int`-only, not generic) correct this file's own
+earlier claim that there was no confirmed way to type a callable/
+predicate parameter — `functools.reduce` already proved otherwise: an
+untyped `func` parameter (the compiler infers it as `dynamic`) plus
+`.Invoke(...)` works on Echoes/Island/Cooper, just not Toffee (raises a
+clear `ValueError` there instead, same as `reduce`). Verified with a
+lambda argument each (`takewhile(lambda x: x < 4, nums)`, etc.) — a
+named function passed by reference still doesn't work, same limitation
+`functools.reduce` already documents.
+
+These three are `int`-only rather than generic over `T` for a newly-
+discovered reason beyond the Toffee limitation: **combining a generic
+type parameter with an untyped/`dynamic` callable parameter that gets
+`.Invoke()`d produces a genuine runtime crash on Echoes** — confirmed
+with an isolated probe (two near-identical functions, one generic over
+`T`, one concrete over `int`, otherwise the same body): the concrete
+version ran correctly, the generic one compiled clean but threw
+`System.BadImageFormatException: An attempt was made to load a program
+with an incorrect format` on its very first call, every time.
+`functools.reduce` never hit this because it was never generic to begin
+with. A real compiler bug, not yet given a formal repro.
+
+`starmap` was attempted and abandoned separately: its return type `V`
+only appears in the function's *return* position, never a parameter, so
+the compiler can't infer it from a call site ("Generic parameter V for
+this method call could not fully be resolved") — and there's no
+confirmed syntax for supplying generic type arguments explicitly at a
+*function* call site the way `List[int]()` does for a constructor call
+(`starmap[int, int, int](...)` itself fails to parse).
 
 `zip_longest` takes two fill values instead of CPython's single shared
 `fillvalue`: with independently-typed sequences (`T` and `U`), one value
@@ -795,6 +826,18 @@ same manual-character-scan technique as `string.py`'s `capwords`/
 module for both directions — parsing a quoted-comma-and-escaped-quote line
 and writing a row back out byte-for-byte the same way.
 
+`parse_line_dict(header: List[str], line: str) -> OrderedDict[str, str]`
+/ `write_row_dict(header: List[str], row: OrderedDict[str, str]) -> str`
+— a `DictReader`/`DictWriter` equivalent, same row-at-a-time scope as
+`parse_line`/`write_row` above rather than a file-bound object. A
+missing trailing field reads as `""` (a concrete stand-in for CPython's
+`restval=None` default, matching this project's established pattern for
+`None` defaults); a header key with no value to write is written as
+`""`. Runtime-verified against CPython's own `csv.DictWriter`: writing a
+row with a comma-containing field byte-for-byte matched (`"Alice,
+Jr.",30,NYC`), and reading it back via `parse_line_dict` recovered all
+three fields exactly.
+
 ## `configparser`
 
 `parse(lines)` reads INI-style text — already split into lines, since this
@@ -881,6 +924,118 @@ replaces `&amp;` last so an already-escaped literal like `&amp;lt;` comes
 back as literal `&lt;` text, not `<`. Runtime-verified byte-for-byte
 against CPython's own `html.escape` output, and a full escape/unescape
 round trip.
+
+## `mimetypes`
+
+`guess_type(filename: str) -> tuple[str, str]` / `guess_extension
+(mimeType: str) -> str`. This was previously lumped into the survey's
+"Networking" exclusion wholesale, but only the *optional* part of
+CPython's own `mimetypes` module needs real filesystem access — reading
+system `mime.types` files to extend its table. The *hardcoded fallback
+table* (`mimetypes.types_map`) CPython always has built in needs nothing
+but string matching, so it isn't actually blocked. This ports a curated
+~20-entry slice of that table (text/web/image/audio/video/archive
+formats most likely to matter), not the full ~200-entry one.
+
+`guess_type` returns `(mimeType, encoding)`, CPython's own 2-tuple shape
+(`encoding` is set for suffix-recognized-but-content-type-unknown cases
+like `.gz`), with `""` standing in for CPython's `None` in either slot —
+the same concrete-stand-in convention `bisect.py`'s `hi=-1`/
+`DefaultDict.get`'s `default` parameter already use. Matching is
+case-insensitive and only looks at the text after the *last* `.` in the
+filename. `guess_extension`'s reverse mapping deliberately matches
+CPython's own choice of canonical extension exactly, even where it isn't
+the "obvious" one — checked directly against CPython rather than
+guessed: `application/xml` maps back to `.xsl`, not `.xml` (an artifact
+of CPython's own internal table construction), and `image/jpeg` maps
+back to `.jpg`, not `.jpeg`.
+
+Runtime-verified against live CPython's own `mimetypes.guess_type`/
+`guess_extension` for every entry in the table, both directions,
+including case-insensitivity (`archive.TAR`, `photo.JPEG`) and the
+unknown-extension fallback — every result matched exactly.
+
+## `urllib`
+
+`quote(s: str) -> str` / `unquote(s: str) -> str` — percent-encoding,
+CPython's `urllib.parse.quote`/`unquote`. `urllib` as a whole is filed
+under the survey's "Networking" exclusion, but this specific pair does no
+I/O at all, the same correction `mimetypes.py` made to its own
+over-broad exclusion. Exposed as plain `urllib.quote`/`urllib.unquote`
+rather than nesting a `urllib.parse` sub-namespace — no other module in
+this project attempts a dotted namespace.
+
+`quote` percent-encodes every byte of `s`'s UTF-8 encoding except RFC
+3986's unreserved characters (letters, digits, `-`/`_`/`.`/`~`) and `/`
+— CPython's own default `safe='/'`. `unquote` reverses it, decoding
+`%XX` triplets back to raw bytes and re-assembling as UTF-8. Built
+entirely on already-shipped primitives, no new algorithm: `codecs.encode`
+/`decode` for UTF-8, `binascii.hexlify`/`unhexlify` for the `%XX` hex
+pairs, `string._length`/`_substring` for the character scan.
+
+Runtime-verified against live CPython's own `urllib.parse.quote`/
+`unquote`: a string mixing spaces, a reserved character (`?`), an
+unreserved one (`-`), and a non-ASCII character (`é`, needing multi-byte
+UTF-8 percent-encoding — built via the `\xNN`-hex-escape workaround
+`codecs.py`'s own notes document, since Promethium source can't hold a
+literal non-ASCII character directly) matched byte-for-byte, and
+round-tripped exactly.
+
+## `wave`
+
+`write_wav(numChannels, sampleRate, bitsPerSample, samples: bytes) ->
+bytes` / `read_wav(data: bytes) -> WavInfo`. Filed under the survey's
+"GUI & hardware" exclusion, but CPython's own `wave` module does no
+audio playback or hardware access at all — it's pure structured binary
+I/O over the RIFF/WAVE container format, the same correction
+`mimetypes.py`/`urllib.py` made to their own exclusions, this time
+applied to a format-parsing module (the same category `zlib.py`/
+`zipfile.py`/`tarfile.py` already proved out). PCM only, matching
+CPython's own `wave` module's scope.
+
+`write_wav` builds a minimal, valid RIFF/WAVE file (12-byte RIFF/WAVE
+header, one `fmt ` chunk, one `data` chunk holding `samples` verbatim).
+`read_wav` scans chunks generically rather than assuming fixed offsets,
+so it correctly reads real-world files carrying extra chunks (`LIST`,
+metadata, etc.) before or after `fmt `/`data`, honoring RIFF's
+word-alignment padding byte after any odd-sized chunk. Reuses
+`zipfile.py`'s `_writeU16LE`/`_writeU32LE`/`_readU16LE`/`_readU32LE`
+little-endian field helpers (a `wave` → `zipfile` cross-namespace call)
+rather than a third duplicate set — the same `gzip` → `zlib` reuse
+already established.
+
+Runtime-verified genuine two-way interop, not just format compliance:
+`write_wav()`'s output was byte-for-byte identical to CPython's own
+`wave.open(..., 'wb')` output for the same PCM samples/parameters on the
+first attempt; real CPython's `wave` module correctly opens and reads
+this module's output back (`getnchannels`/`getsampwidth`/`getframerate`/
+`readframes` all correct); and this module's own `write_wav()` →
+`read_wav()` round-trips exactly.
+
+## `email`
+
+`parseaddr(value: str) -> tuple[str, str]` / `formataddr(nameAndAddr:
+tuple[str, str]) -> str` — `email.utils`'s two pure-string-parsing
+functions, not the full `email` package (no message parsing, no MIME, no
+header-encoding/RFC 2047 encoded-words). `email` sits under the survey's
+"Networking" exclusion as a whole, but this pair does no I/O at all, the
+same correction `mimetypes.py`/`urllib.py`/`wave.py` already made to
+their own over-broad exclusions.
+
+`parseaddr` only recognizes the common `Name <addr>`/bare-`addr` shapes
+(unquoting a `"Name"` wrapped in quotes) — not full RFC 2822 address
+parsing (comments, multiple addresses, and far more syntax than
+attempted here). `formataddr` quotes the name (escaping internal
+`"`/`\`) whenever it contains any of the characters CPython's own
+implementation treats as needing quoting, otherwise leaves it bare.
+Reuses `configparser.py`'s already-proven `_trim` (a cross-namespace
+call, same pattern as `gzip` → `zlib`/`wave` → `zipfile`) rather than a
+fourth duplicate whitespace-trim helper.
+
+Runtime-verified against live CPython's own `email.utils.parseaddr`/
+`formataddr`: a plain name/address pair, a bare address with no name, and
+a comma-containing name needing quotes — every result matched exactly,
+both directions.
 
 ## `xml`
 
@@ -1200,6 +1355,18 @@ BCL `System.Convert`, which has same-named `ToBase64String`/
 Runtime-verified against live CPython's `base64.b64encode`/`b64decode`:
 encoded text and every decoded byte matched exactly.
 
+`urlsafe_b64encode`/`urlsafe_b64decode` swap `+`/`/` for `-`/`_` (padding
+`=` is left alone, matching CPython, which doesn't strip it either).
+Built on `string.py`'s already-proven `_length`/`_substring` per-target
+helpers — called fully-qualified as `string._length(...)`/
+`string._substring(...)`, no import needed (the underscore prefix is
+convention, not compiler-enforced privacy, per the `hashlib`/`hmac`
+finding) — rather than reaching for a new, unconfirmed-on-Toffee native
+`.Replace` call. Runtime-verified with a byte sequence chosen specifically
+to produce `+`/`/` in its standard encoding (`\xfb\xff\xbf` → `-_-_`),
+matching CPython's `base64.urlsafe_b64encode` exactly, with a correct
+round-trip back through `urlsafe_b64decode`.
+
 ## `binascii`
 
 `hexlify(data: bytes) -> str`/`unhexlify(data: str) -> bytes`, built
@@ -1308,20 +1475,181 @@ Runtime-verified against live CPython's `struct.pack`/`unpack`: `uint8`,
 `uint16` both byte orders, `uint32` both byte orders — every byte and
 every round-tripped value matched exactly.
 
+## `zlib`
+
+An honestly-scoped subset, not a placeholder: real, standards-compliant
+zlib/DEFLATE (RFC 1950/1951) container format — `compress(data: bytes)
+-> bytes`, `decompress(data: bytes) -> bytes`, `adler32(data: bytes) ->
+int` — but only ever emitting/reading DEFLATE's *stored* (`BTYPE=00`,
+uncompressed) block type. This was previously written off entirely in
+the survey ("needs a real compression algorithm") on the assumption that
+`zlib` means Huffman coding and LZ77 — true for actual compression, but
+the *container format* itself (zlib header, block framing, Adler-32
+trailer) needs none of that, and is exactly what CPython's own
+`zlib.compress(data, level=0)` produces. `decompress()` only understands
+stored blocks — given a real compressed (Huffman-coded) stream it raises
+a clear `ValueError` rather than misbehaving silently, the same
+honest-failure choice `DefaultDict.py` makes for its own Toffee
+limitation; it also doesn't validate the trailing Adler-32 checksum
+against the decompressed output, a curated-scope limitation, not a
+correctness gap for well-formed input.
+
+Built entirely on `RemObjects.Elements.RTL.Binary` (`PyByteArray.py`'s
+discovery) for the variable-length output neither `compress` nor
+`decompress` can size in advance.
+
+Runtime-verified three ways, not just format-compliance-by-construction:
+(1) `compress()`'s output is byte-for-byte identical to CPython's own
+`zlib.compress(data, 0)` for a short single-block input; for a large
+(80,000-byte, multi-block) input the two outputs differ in *where* they
+split into blocks — CPython's own zlib doesn't always chunk at the
+maximum 65535 bytes, an internal buffering detail, not part of the
+format — but both come out to exactly 80016 bytes and both are valid;
+(2) real CPython's `zlib.decompress()` correctly decompresses this
+module's multi-block output back to the original 80,000 bytes — genuine
+two-way interop confirmed directly, not inferred from spec-reading; (3)
+this module's own `compress()` → `decompress()` round-trips exactly for
+both inputs, and `adler32()` matches CPython's `zlib.adler32()` exactly
+(compared as signed-int32 bit patterns, same convention
+`binascii.crc32` already established).
+
+## `gzip`
+
+`compress(data: bytes) -> bytes`/`decompress(data: bytes) -> bytes`,
+sharing `zlib.py`'s DEFLATE-stored-blocks approach entirely — gzip wraps
+the exact same uncompressed DEFLATE stream `zlib._deflateStored` already
+produces, just with different outer framing (a 10-byte header instead of
+zlib's 2-byte one) and a CRC-32 + uncompressed-size trailer instead of an
+Adler-32 one. Built directly on `zlib._deflateStored`/`zlib.
+_inflateStored` (a `gzip` → `zlib` cross-namespace call, same pattern
+`hashlib.pbkdf2_hmac_sha256`'s `hashlib` → `hmac` call already
+established) and `binascii.crc32` — essentially no new algorithm work at
+all, just new framing over what `zlib.py` and `binascii.py` already
+built.
+
+`mtime` is always written as `0` (matches CPython's own `gzip.GzipFile`
+when `mtime=0` is passed explicitly) rather than real wall-clock time —
+deterministic output, and mtime has no effect on decompression
+correctness either way. `OS` is written as `0xFF` ("unknown"), also
+matching CPython's own default. Inherits `zlib.py`'s `decompress()`
+limitations: only understands the stored-block stream `compress()`
+produces (raises `ValueError` on a real Huffman-coded stream), and
+doesn't validate the trailing CRC-32/ISIZE.
+
+Runtime-verified against CPython's own `gzip.GzipFile(fileobj=...,
+mode='wb', mtime=0, compresslevel=0)`: `compress()`'s output was
+byte-for-byte identical on the first attempt (a short, single-block
+input, so no chunk-boundary ambiguity); CPython's own `gzip.decompress()`
+correctly reads this module's output back to the original bytes — real
+interop, confirmed directly; and this module's own `compress()` →
+`decompress()` round-trips exactly.
+
+## `zipfile`
+
+One format layer up from `zlib`/`gzip`, same approach: real ZIP archives
+(local file headers + central directory + end-of-central-directory
+record), but only ever writing/reading entries with compression method 0
+("stored", uncompressed) — a real, standard part of the ZIP format, not
+an approximation of one. `write_archive(names: List[str], contents:
+List[bytes]) -> bytes` / `read_archive(data: bytes) -> OrderedDict[str,
+bytes]` take/return plain lists rather than mirroring CPython's
+class-based `zipfile.ZipFile` — no `*args`, context managers, or
+file-object streaming in this language slice, the same "concrete
+stand-in" choice `struct.py`/`pbkdf2_hmac_sha256` already make.
+Modification timestamps are always the DOS epoch (1980-01-01, matching
+`gzip.py`'s deterministic `mtime=0` choice).
+
+Exact byte layout for all three structures (local file header, central
+directory header, end-of-central-directory record — field order and
+widths) was decoded field-by-field from a real archive CPython's own
+`zipfile.ZipFile` produced, via `struct.unpack`, not guessed from the
+spec. `version made by`/`external file attributes` are written as `0`
+here rather than mimicking CPython's Unix-permission-encoded values,
+since neither affects whether a stored entry reads back correctly.
+`read_archive()` raises a clear `ValueError` on any entry whose
+compression method isn't 0, the same honest-failure choice `zlib.py`/
+`gzip.py` make for a real Huffman-coded stream, and follows each central
+directory entry's own recorded local-header offset and filename/extra
+lengths to locate its data — so it correctly reads archives from real
+tools too, not just ones this module wrote itself.
+
+Runtime-verified genuine two-way interop, both directions independently
+confirmed: (1) a two-entry archive from this module's `write_archive()`
+opens correctly in real CPython's `zipfile.ZipFile` — `namelist()` shows
+both entries, `testzip()` reports no corruption, and `read()` on each
+entry matches exactly; (2) this module's `read_archive()` correctly
+reads a two-entry archive that real CPython's `zipfile.ZipFile` produced,
+recovering both filenames and their exact content; (3) this module's own
+`write_archive()` → `read_archive()` round-trips exactly.
+
+## `tarfile`
+
+Unlike `zlib`/`gzip`/`zipfile`, this is a *complete* implementation, not
+an honestly-scoped subset: the POSIX ustar TAR format has no compression
+concept at all — it's just fixed 512-byte header blocks followed by raw
+file data padded to a 512-byte boundary, terminated by a zero-filled
+block. `write_archive(names: List[str], contents: List[bytes]) -> bytes`
+/ `read_archive(data: bytes) -> OrderedDict[str, bytes]`, the same
+list-based API shape `zipfile.py` uses instead of CPython's class-based
+`tarfile.TarFile`. Every entry is written as a regular file (typeflag
+`'0'`), mode `0o644`, uid/gid/devmajor/devminor `0`, empty uname/gname,
+mtime `0` (same deterministic-output choice as `gzip.py`/`zipfile.py`).
+Filenames longer than 100 bytes raise a clear `ValueError` — the classic
+ustar `name` field has no room for more (real tar implementations use a
+GNU/POSIX extension header for long names, not attempted here).
+
+Header field layout (every field's exact byte offset/width, and the
+checksum algorithm — sum of all header bytes with the checksum field
+itself treated as 8 ASCII spaces during the sum, stored as 6 octal
+digits + NUL + space) was decoded field-by-field from a real CPython-
+produced archive, not guessed from the spec. `write_archive()`
+deliberately does not pad the overall output to a full 10240-byte
+"record" the way GNU tar's default blocking factor does — confirmed
+unnecessary by testing directly: real CPython's `tarfile.open()` reads
+an unpadded archive (header + data + just the two end-of-archive zero
+blocks) correctly. `read_archive()` doesn't validate the header checksum
+against a recomputed one, and stops as soon as it hits a zero-filled
+block where a header was expected, the same lenient-reader behavior real
+tar tools use rather than requiring exactly two trailing zero blocks.
+
+Runtime-verified genuine two-way interop, both directions independently
+confirmed: (1) a two-entry archive from this module's `write_archive()`
+opens and reads back correctly with real CPython's `tarfile.open()` —
+`getnames()` and `extractfile().read()` both correct for both entries;
+(2) this module's `read_archive()` correctly reads a two-entry archive
+real CPython's `tarfile` produced (including one padded to the full
+10240-byte record CPython writes by default — confirming the reader
+doesn't depend on any particular archive-length alignment); (3) this
+module's own `write_archive()` → `read_archive()` round-trips exactly.
+
 ## `hashlib`
 
 `md5(data: bytes) -> bytes` (16-byte digest) / `md5_hexdigest(data:
-bytes) -> str`, and `sha256(data: bytes) -> bytes` (32-byte digest) /
-`sha256_hexdigest(data: bytes) -> str`. Full hand-rolled implementations
-of RFC 1321 (MD5) and FIPS 180-4 (SHA-256) — no cross-platform hash
-primitive was found anywhere in RTL2 (only a Toffee-only `CC_SHA1`
-TLS-certificate-fingerprint helper, not reusable), the same situation
-`re.py` was in before RTL2 got a regex engine as a side task. This is
-that side task done in pure Promethium instead: no native call anywhere
-in the file, only bit arithmetic, same category as `struct.py`/
-`binascii.py`'s `crc32`.
+bytes) -> str`, `sha1(data: bytes) -> bytes` (20-byte digest) /
+`sha1_hexdigest(data: bytes) -> str`, and `sha256(data: bytes) -> bytes`
+(32-byte digest) / `sha256_hexdigest(data: bytes) -> str`. Full
+hand-rolled implementations of RFC 1321 (MD5), RFC 3174/FIPS 180-4
+(SHA-1), and FIPS 180-4 (SHA-256) — no cross-platform hash primitive was
+found anywhere in RTL2 (only a Toffee-only `CC_SHA1` TLS-certificate-
+fingerprint helper, not reusable), the same situation `re.py` was in
+before RTL2 got a regex engine as a side task. This is that side task
+done in pure Promethium instead: no native call anywhere in the file,
+only bit arithmetic, same category as `struct.py`/`binascii.py`'s
+`crc32`.
 
-Both algorithms needed the same two Promethium-specific problems solved:
+SHA-1 shares SHA-256's exact padding scheme (64-byte blocks, big-endian
+word packing, big-endian bit-length trailer), so it reuses
+`_sha256VirtualByte`/`_writeWordBE` directly rather than a third
+duplicate pair — only its compression function (80 rounds over 5 state
+words, vs. SHA-256's 64 rounds over 8) is new code. Its five initial
+hash words and four round constants were computed in Python, same
+transcription-avoidance discipline as SHA-256's table. Incidentally,
+SHA-1's `H0`-`H3` are the exact same four magic words as MD5's `a0`-`d0`,
+just reordered — a shared historical convention between the two
+algorithms, not anything Promethium-specific.
+
+All three algorithms needed the same two Promethium-specific problems
+solved:
 
 - **No dynamically-sized `bytes` allocation exists** (`bytes(n)` isn't a
   valid constructor — see `struct.py`'s notes). Both hashes need to work
@@ -1355,46 +1683,81 @@ Both algorithms needed the same two Promethium-specific problems solved:
   directly (`2147483647 + 1` produces `-2147483648`, no exception) —
   exactly the modular arithmetic both compression functions need.
 
-Both only support inputs whose *bit* length fits in 32 bits (message
+All three only support inputs whose *bit* length fits in 32 bits (message
 length under ~268MB) — a curated-scope limit, not a correctness gap for
 realistic input sizes.
 
 `md5`/`md5_hexdigest` runtime-verified against all seven of RFC 1321's
-own official MD5 test vectors; `sha256`/`sha256_hexdigest` against four
+own official MD5 test vectors; `sha1`/`sha1_hexdigest` against three of
+NIST's own SHA-1 test vectors; `sha256`/`sha256_hexdigest` against four
 of NIST's own SHA-256 test vectors (including two multi-block messages).
-Both cross-checked against live CPython's `hashlib.md5`/`hashlib.sha256`
-on the same inputs — every digest matched exactly (SHA-256 matched on
-the first attempt; MD5 needed one real bug found and fixed:
-`_sTable()`'s construction interleaved all four 4-shift groups on each of
-four outer loop passes instead of repeating each group four times before
-moving to the next — a loop-nesting mistake, not a bit-arithmetic one).
+All three cross-checked against live CPython's `hashlib.md5`/
+`hashlib.sha1`/`hashlib.sha256` on the same inputs — every digest matched
+exactly (SHA-1 and SHA-256 both matched on the first attempt; MD5 needed
+one real bug found and fixed: `_sTable()`'s construction interleaved all
+four 4-shift groups on each of four outer loop passes instead of
+repeating each group four times before moving to the next — a
+loop-nesting mistake, not a bit-arithmetic one).
 
 ## `hmac`
 
-`hmac_md5(key: bytes, message: bytes) -> bytes` / `hmac_md5_hexdigest`,
-and `hmac_sha256(key: bytes, message: bytes) -> bytes` /
-`hmac_sha256_hexdigest`, built entirely on `hashlib`'s hand-rolled MD5/
-SHA-256 via their `_md5Core`/`_sha256Core` two-buffer primitives. RFC
-2104's algorithm: `H((K' XOR opad) || H((K' XOR ipad) || message))`,
-where `K'` is the key zero-padded to the hash's 64-byte block size (both
-MD5 and SHA-256 share that block size), or hashed down (to 16 bytes for
-MD5, 32 for SHA-256) then zero-padded, if the key is longer than 64
-bytes. `_keyBlockMd5`/`_keyBlockSha256` are near-identical but kept
-separate rather than parameterized over which hash to call — a
-named-function-as-value only works as a lambda here, not a plain
-function reference, so passing `hashlib.md5`/`hashlib.sha256` in wasn't
-a safe bet to make per-target.
+`hmac_md5`/`hmac_sha1`/`hmac_sha256` (each `(key: bytes, message: bytes)
+-> bytes`, plus a `_hexdigest` variant), built entirely on `hashlib`'s
+hand-rolled MD5/SHA-1/SHA-256 via their `_md5Core`/`_sha1Core`/
+`_sha256Core` two-buffer primitives. RFC 2104's algorithm: `H((K' XOR
+opad) || H((K' XOR ipad) || message))`, where `K'` is the key zero-padded
+to the hash's 64-byte block size (all three algorithms share that block
+size), or hashed down (to 16/20/32 bytes respectively) then zero-padded,
+if the key is longer than 64 bytes. `_keyBlockMd5`/`_keyBlockSha1`/
+`_keyBlockSha256` are near-identical but kept separate rather than
+parameterized over which hash to call — a named-function-as-value only
+works as a lambda here, not a plain function reference, so passing
+`hashlib.md5`/`hashlib.sha1`/`hashlib.sha256` in wasn't a safe bet to
+make per-target.
 
 Runtime-verified against cases drawn from RFC 2202's official HMAC test
 vectors — a short key/message, the empty key and empty message, a short
 key ("Jefe") with a longer message, and (the case that actually exercises
-the hash-down path) an 80-byte key with a plain-text message — for both
-HMAC-MD5 and HMAC-SHA256, cross-checked against live CPython's
-`hmac.new(key, msg, hashlib.md5 / hashlib.sha256).hexdigest()`; every
-digest matched exactly. Also re-verified `hashlib.md5`/`hashlib.sha256`
-themselves still produce correct digests after being generalized into
-two-buffer cores — the refactor changed no observable behavior for the
-single-buffer case.
+the hash-down path) an 80-byte key with a plain-text message — for all
+three of HMAC-MD5, HMAC-SHA1, and HMAC-SHA256, cross-checked against live
+CPython's `hmac.new(key, msg, hashlib.md5 / hashlib.sha1 /
+hashlib.sha256).hexdigest()`; every digest matched exactly, all on the
+first attempt for the SHA-1 addition. Also re-verified `hashlib.md5`/
+`hashlib.sha256` themselves still produce correct digests after being
+generalized into two-buffer cores — the refactor changed no observable
+behavior for the single-buffer case.
+
+`pbkdf2_hmac_sha256(password: bytes, salt: bytes, iterations: int,
+dklen: int) -> bytes` / `pbkdf2_hmac_sha256_hexdigest`, RFC 2898's key
+derivation function, built entirely on `hmac_sha256` — a `hashlib` →
+`hmac` cross-namespace call, the reverse direction of `hmac.py`'s own
+`hmac` → `hashlib` calls, needing no import either way (confirmed the
+dependency direction between modules in one assembly isn't restricted).
+Two things CPython gets for free that this language slice doesn't, both
+solved with `RemObjects.Elements.RTL.Binary` (see `PyByteArray.py`'s
+notes): building `salt || INT_32_BE(blockIndex)` — a concatenation
+involving a *computed* 4-byte counter, not a literal — and building the
+final `dklen`-byte output by concatenating as many 32-byte blocks as
+needed, where `dklen` isn't known at compile time (genuinely impossible
+with the old fixed-literal `bytes` idiom).
+
+Deviates from CPython's `pbkdf2_hmac(hash_name, password, salt,
+iterations, dklen=None)` on purpose: `dklen` is a required parameter (no
+optional-parameter convention exists in this project to spell
+`dklen=None` with), and the function name is specific to SHA-256 rather
+than dispatching on a string hash name — that dispatch would need a
+first-class function value looked up by name, and (per `hmac.py`'s own
+notes) a named-function-as-value has only been confirmed safe as a
+lambda, not a stored/looked-up reference.
+
+Runtime-verified against live CPython's own `hashlib.pbkdf2_hmac
+('sha256', password, salt, iterations, dklen)` for a single-block output,
+a multi-block output (`dklen=48`, spanning two 32-byte blocks — exercises
+the block-concatenation path), and `iterations=4096` (matching RFC 6070's
+own PBKDF2 test-vector iteration count) — every derived key matched
+exactly, including an empty-password/empty-salt case that incidentally
+confirmed `b""` (an empty `bytes` literal) compiles and behaves correctly
+too.
 
 ## `heapq`
 
@@ -1526,7 +1889,9 @@ be an unrelated real error whose diagnostics cascaded across files. Every
 `fnmatch.py`, `shlex.py`, `html.py`, `xml.py`, `re.py`, `json.py`,
 `pprint.py`, `tomllib.py`, `time.py`, `queue.py`, `base64.py`,
 `binascii.py`, `codecs.py`, `struct.py`, `hashlib.py`, `hmac.py`,
-`PyByteArray.py`, `unittest.py`) is a single global
+`PyByteArray.py`, `unittest.py`, `zlib.py`, `gzip.py`, `zipfile.py`,
+`tarfile.py`, `mimetypes.py`, `urllib.py`, `wave.py`, `email.py`) is a
+single global
 `<Compile Include="..." />` item compiled
 for every target — including `DefaultDict.py`, whose Toffee-specific
 limitation is handled inside the source itself (see its section above)

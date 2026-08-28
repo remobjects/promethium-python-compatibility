@@ -1,6 +1,6 @@
 @namespace("itertools")
 
-from Promethium import List
+from Promethium import List, ValueError
 
 
 # A small, eager subset of Python's itertools module. CPython's itertools is
@@ -10,12 +10,46 @@ from Promethium import List
 # iterator — the same choice PromethiumBaseLibrary's own `range()` already
 # makes for the same reason. Infinite generators (`count`, `cycle`,
 # `repeat()` with no `times`) have no eager equivalent at all and are not
-# attempted. Predicate-taking functions (`takewhile`, `dropwhile`,
-# `filterfalse`, `starmap`) are also not attempted: there's no confirmed,
-# tested way to type a callable/predicate parameter in this codebase (the
-# one precedent, `DefaultDict`'s factory, is deliberately left untyped and
-# only ever `.Invoke()`d, which isn't enough to build a generic predicate
-# parameter on).
+# attempted.
+#
+# Predicate-taking functions (`takewhile`, `dropwhile`, `filterfalse`)
+# *are* attempted, below, correcting this file's own earlier note that
+# there was "no confirmed, tested way to type a callable/predicate
+# parameter in this codebase" — `functools.reduce` already proved
+# otherwise by the time this was revisited: an untyped `func` parameter
+# (the compiler infers it as `dynamic`) plus `.Invoke(...)` works on
+# Echoes/Island/Cooper, just not Toffee (an untyped parameter erases to
+# Objective-C `id` there, whose block-invocation surface doesn't expose a
+# matching `invoke` overload — confirmed, not assumed, by `functools.py`).
+# Each predicate-taking function here follows `functools.reduce`'s exact
+# pattern: raise a clear `ValueError` on Toffee instead of silently
+# misbehaving, and use `.Invoke(...)` everywhere else.
+#
+# All three are typed for `int` specifically, not generic over `T`, for a
+# newly-discovered reason beyond the Toffee limitation: combining a
+# *generic* type parameter with an untyped/`dynamic` callable parameter
+# that gets `.Invoke()`d produces a genuine runtime crash on Echoes —
+# confirmed with an isolated probe (two near-identical functions, one
+# generic over `T` and one concrete over `int`, otherwise byte-for-byte
+# the same body): the concrete version ran correctly, the generic version
+# compiled clean but threw `System.BadImageFormatException: An attempt
+# was made to load a program with an incorrect format` at the very first
+# call, every time. `functools.reduce` never hit this because it was
+# never generic in the first place. Not yet reported as a formal repro to
+# the compiler team.
+#
+# `starmap` was attempted and abandoned separately: its generic return
+# type `V` only ever appears in the function's *return* position, never
+# in a parameter, so the compiler can't infer it from a call site
+# ("Generic parameter V for this method call could not fully be
+# resolved") — and there's no confirmed syntax in this language slice for
+# supplying generic type arguments explicitly at a *function* call site
+# the way `List[int]()` supplies them for a *constructor* call
+# (`starmap[int, int, int](...)` itself fails to parse: "Unknown
+# identifier 'int'").
+#
+# `pairwise`/`batched` need no predicate at all, stay generic over `T`,
+# and work on every target.
 #
 # Most functions here are fully generic over `T` — they only rearrange or
 # copy elements, never compare or hash them, so they don't run into the
@@ -244,3 +278,82 @@ def zip_longest[T, U](a: List[T], b: List[U], fillA: T = None, fillB: U = None) 
         result.append((left, right))
         index += 1
     return result
+
+
+def pairwise[T](values: List[T]) -> List[tuple[T, T]]:
+    result: List[tuple[T, T]] = List[tuple[T, T]]()
+    i: int = 0
+    n: int = len(values)
+    while i + 1 < n:
+        result.append((values.__getitem__(i), values.__getitem__(i + 1)))
+        i += 1
+    return result
+
+
+def batched[T](values: List[T], n: int) -> List[List[T]]:
+    result: List[List[T]] = List[List[T]]()
+    i: int = 0
+    total: int = len(values)
+    while i < total:
+        batch: List[T] = List[T]()
+        j: int = 0
+        while j < n and i + j < total:
+            batch.append(values.__getitem__(i + j))
+            j += 1
+        result.append(batch)
+        i += n
+    return result
+
+
+def takewhile(pred, values: List[int]) -> List[int]:
+    if defined("TOFFEE"):
+        raise ValueError("itertools.takewhile cannot invoke its predicate on Toffee yet")
+    else:
+        result: List[int] = List[int]()
+        i: int = 0
+        n: int = len(values)
+        while i < n:
+            item: int = values.__getitem__(i)
+            keep: bool = pred.Invoke(item)
+            if not keep:
+                break
+            result.append(item)
+            i += 1
+        return result
+
+
+def dropwhile(pred, values: List[int]) -> List[int]:
+    if defined("TOFFEE"):
+        raise ValueError("itertools.dropwhile cannot invoke its predicate on Toffee yet")
+    else:
+        result: List[int] = List[int]()
+        i: int = 0
+        n: int = len(values)
+        dropping: bool = True
+        while i < n:
+            item: int = values.__getitem__(i)
+            if dropping:
+                keep: bool = pred.Invoke(item)
+                if keep:
+                    i += 1
+                    continue
+                dropping = False
+            result.append(item)
+            i += 1
+        return result
+
+
+def filterfalse(pred, values: List[int]) -> List[int]:
+    if defined("TOFFEE"):
+        raise ValueError("itertools.filterfalse cannot invoke its predicate on Toffee yet")
+    else:
+        result: List[int] = List[int]()
+        i: int = 0
+        n: int = len(values)
+        while i < n:
+            item: int = values.__getitem__(i)
+            keep: bool = pred.Invoke(item)
+            if not keep:
+                result.append(item)
+            i += 1
+        return result

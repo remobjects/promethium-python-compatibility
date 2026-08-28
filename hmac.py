@@ -101,3 +101,39 @@ def hmac_sha256(key: bytes, message: bytes) -> bytes:
 
 def hmac_sha256_hexdigest(key: bytes, message: bytes) -> str:
     return binascii.hexlify(hmac_sha256(key, message))
+
+
+def _keyBlockSha1(key: bytes) -> bytes:
+    block: bytes = _zeroBlock64()
+    keyLen: int = key.Length
+    if keyLen > 64:
+        hashed: bytes = hashlib.sha1(key)
+        i: int = 0
+        while i < hashed.Length:
+            block[i] = hashed[i]
+            i += 1
+    else:
+        i: int = 0
+        while i < keyLen:
+            block[i] = key[i]
+            i += 1
+    return block
+
+
+def hmac_sha1(key: bytes, message: bytes) -> bytes:
+    keyBlock: bytes = _keyBlockSha1(key)
+    ipadBlock: bytes = _zeroBlock64()
+    opadBlock: bytes = _zeroBlock64()
+    i: int = 0
+    while i < 64:
+        ipadBlock[i] = keyBlock[i] ^ 0x36
+        opadBlock[i] = keyBlock[i] ^ 0x5C
+        i += 1
+
+    innerHash: bytes = hashlib._sha1Core(ipadBlock, 64, message, message.Length)
+    outerHash: bytes = hashlib._sha1Core(opadBlock, 64, innerHash, 20)
+    return outerHash
+
+
+def hmac_sha1_hexdigest(key: bytes, message: bytes) -> str:
+    return binascii.hexlify(hmac_sha1(key, message))

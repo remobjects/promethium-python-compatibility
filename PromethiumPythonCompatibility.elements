@@ -173,6 +173,14 @@
     <Compile Include="hmac.py" />
     <Compile Include="PyByteArray.py" />
     <Compile Include="unittest.py" />
+    <Compile Include="zlib.py" />
+    <Compile Include="gzip.py" />
+    <Compile Include="zipfile.py" />
+    <Compile Include="tarfile.py" />
+    <Compile Include="mimetypes.py" />
+    <Compile Include="urllib.py" />
+    <Compile Include="wave.py" />
+    <Compile Include="email.py" />
     <Folder Include="collections">
       <Virtual>True</Virtual>
     </Folder>

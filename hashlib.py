@@ -530,3 +530,210 @@ def sha256(data: bytes) -> bytes:
 
 def sha256_hexdigest(data: bytes) -> str:
     return binascii.hexlify(sha256(data))
+
+
+# SHA-1 (RFC 3174 / FIPS 180-4). Shares SHA-256's padding scheme exactly
+# — same 64-byte block, same `0x80` marker, same big-endian bit-length
+# trailer — so this reuses `_sha256VirtualByte`/`_writeWordBE` directly
+# rather than duplicating them a third time; only the compression
+# function differs (80 rounds over 5 32-bit state words instead of 64
+# rounds over 8). `H0`-`H4`/the 4 round constants were computed in Python
+# rather than hand-transcribed, same discipline as SHA-256's table.
+# Interesting incidental fact, not load-bearing: SHA-1's `H0`-`H3` are the
+# exact same four magic words as MD5's `a0`-`d0`, just reordered — a
+# shared historical convention between the two algorithms, not a
+# Promethium-specific detail.
+#
+# Runtime-verified against three of NIST's own SHA-1 test vectors (the
+# empty string, `"abc"`, and a multi-block message) and cross-checked
+# against live CPython's `hashlib.sha1` on the same inputs — every digest
+# matched exactly on the first attempt.
+
+def _sha1KTable() -> List[int]:
+    result: List[int] = List[int]()
+    result.append(1518500249)
+    result.append(1859775393)
+    result.append(-1894007588)
+    result.append(-899497514)
+    return result
+
+
+def _sha1Core(prefix: bytes, prefixLen: int, suffix: bytes, suffixLen: int) -> bytes:
+    totalLen: int = prefixLen + suffixLen
+    paddedLen: int = ((totalLen + 1 + 8 + 63) / 64) * 64
+    numChunks: int = paddedLen / 64
+    kTable: List[int] = _sha1KTable()
+
+    h0: int = 1732584193
+    h1: int = -271733879
+    h2: int = -1732584194
+    h3: int = 271733878
+    h4: int = -1009589776
+
+    chunkIndex: int = 0
+    while chunkIndex < numChunks:
+        chunkStart: int = chunkIndex * 64
+        w: List[int] = List[int]()
+        wordIndex: int = 0
+        while wordIndex < 16:
+            base: int = chunkStart + wordIndex * 4
+            byte0: int = _sha256VirtualByte(prefix, prefixLen, suffix, suffixLen, totalLen, paddedLen, base)
+            byte1: int = _sha256VirtualByte(prefix, prefixLen, suffix, suffixLen, totalLen, paddedLen, base + 1)
+            byte2: int = _sha256VirtualByte(prefix, prefixLen, suffix, suffixLen, totalLen, paddedLen, base + 2)
+            byte3: int = _sha256VirtualByte(prefix, prefixLen, suffix, suffixLen, totalLen, paddedLen, base + 3)
+            word: int = (byte0 << 24) | (byte1 << 16) | (byte2 << 8) | byte3
+            w.append(word)
+            wordIndex += 1
+
+        t: int = 16
+        while t < 80:
+            value: int = w[t - 3] ^ w[t - 8] ^ w[t - 14] ^ w[t - 16]
+            w.append(_rotl32(value, 1))
+            t += 1
+
+        a: int = h0
+        b: int = h1
+        c: int = h2
+        d: int = h3
+        e: int = h4
+
+        i: int = 0
+        while i < 80:
+            f: int = 0
+            k: int = 0
+            if i < 20:
+                f = (b & c) | (_not32(b) & d)
+                k = kTable[0]
+            elif i < 40:
+                f = b ^ c ^ d
+                k = kTable[1]
+            elif i < 60:
+                f = (b & c) | (b & d) | (c & d)
+                k = kTable[2]
+            else:
+                f = b ^ c ^ d
+                k = kTable[3]
+
+            temp: int = _rotl32(a, 5) + f + e + k + w[i]
+            e = d
+            d = c
+            c = _rotl32(b, 30)
+            b = a
+            a = temp
+            i += 1
+
+        h0 = h0 + a
+        h1 = h1 + b
+        h2 = h2 + c
+        h3 = h3 + d
+        h4 = h4 + e
+
+        chunkIndex += 1
+
+    result: bytes = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    _writeWordBE(result, 0, h0)
+    _writeWordBE(result, 4, h1)
+    _writeWordBE(result, 8, h2)
+    _writeWordBE(result, 12, h3)
+    _writeWordBE(result, 16, h4)
+    return result
+
+
+def sha1(data: bytes) -> bytes:
+    return _sha1Core(data, data.Length, data, 0)
+
+
+def sha1_hexdigest(data: bytes) -> str:
+    return binascii.hexlify(sha1(data))
+
+
+# PBKDF2-HMAC-SHA256 (RFC 2898 / RFC 8018), built entirely on primitives
+# already shipped: `hmac.hmac_sha256` for the pseudorandom function, and
+# `RemObjects.Elements.RTL.Binary` (see `PyByteArray.py`'s notes — the
+# same discovery that unlocked real dynamic `bytes` allocation) for two
+# things CPython gets for free that this language slice doesn't: building
+# `salt || INT_32_BE(blockIndex)` (a concatenation of two buffers, one of
+# them a *computed* 4-byte counter, not a literal) and building the final
+# `dklen`-byte output by concatenating as many 32-byte blocks as needed —
+# `dklen` isn't known at compile time, so this is genuinely a case where
+# the old fixed-literal `bytes`-construction idiom couldn't have worked at
+# all. Calling `hmac.hmac_sha256` from here (a `hashlib` → `hmac` cross-
+# namespace call, the reverse direction of `hmac.py`'s existing `hmac` →
+# `hashlib` calls) needed no import, same as every other cross-namespace
+# function call in this project — confirms the dependency direction
+# between modules compiled into one assembly isn't restricted either way.
+#
+# Deviates from CPython on purpose: real signature is `pbkdf2_hmac
+# (hash_name, password, salt, iterations, dklen=None)`, dispatching on a
+# string hash name and defaulting `dklen` to the hash's own digest size.
+# Neither is safely portable here — string-keyed dispatch to one of
+# several hash functions would need first-class function values passed
+# around, which (per `hmac.py`'s own notes) only works as a lambda, not a
+# stored/looked-up function reference, and this project has no optional-
+# parameter convention to spell `dklen=None` with. `dklen` is therefore a
+# required parameter, and the function name is specific to SHA-256 rather
+# than generic — same "concrete stand-in over exact parity" choice as
+# `bisect.py`'s `hi=-1` sentinel or `struct.py`'s named-by-width
+# functions instead of a format-string API.
+#
+# Runtime-verified against live CPython's own `hashlib.pbkdf2_hmac
+# ('sha256', password, salt, iterations, dklen)` across three cases: a
+# single-block output (`dklen=32`) at a low iteration count, a
+# multi-block output (`dklen=48`, spanning two 32-byte blocks) to
+# exercise the block-concatenation path, and `iterations=4096` (matching
+# the iteration count RFC 6070's own PBKDF2 test vectors use) to exercise
+# more than a handful of rounds — every derived key matched exactly.
+
+def _pbkdf2Block(password: bytes, salt: bytes, iterations: int, blockIndex: int) -> bytes:
+    counterBuf: RemObjects.Elements.RTL.Binary = RemObjects.Elements.RTL.Binary()
+    counterBuf.Write(salt)
+    counterBytes: bytes = b"\x00\x00\x00\x00"
+    counterBytes[0] = (blockIndex >> 24) & 0xFF
+    counterBytes[1] = (blockIndex >> 16) & 0xFF
+    counterBytes[2] = (blockIndex >> 8) & 0xFF
+    counterBytes[3] = blockIndex & 0xFF
+    counterBuf.Write(counterBytes)
+    saltAndCounter: bytes = counterBuf.ToArray()
+
+    u: bytes = hmac.hmac_sha256(password, saltAndCounter)
+    acc: bytes = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    i: int = 0
+    while i < 32:
+        acc[i] = u[i]
+        i += 1
+
+    iterIndex: int = 1
+    while iterIndex < iterations:
+        u = hmac.hmac_sha256(password, u)
+        i = 0
+        while i < 32:
+            acc[i] = acc[i] ^ u[i]
+            i += 1
+        iterIndex += 1
+
+    return acc
+
+
+def pbkdf2_hmac_sha256(password: bytes, salt: bytes, iterations: int, dklen: int) -> bytes:
+    outputBuf: RemObjects.Elements.RTL.Binary = RemObjects.Elements.RTL.Binary()
+    blockIndex: int = 1
+    produced: int = 0
+    while produced < dklen:
+        block: bytes = _pbkdf2Block(password, salt, iterations, blockIndex)
+        remaining: int = dklen - produced
+        toTake: int = 32
+        if remaining < 32:
+            toTake = remaining
+        i: int = 0
+        while i < toTake:
+            one: bytes = b"\x00"
+            one[0] = block[i]
+            outputBuf.Write(one)
+            i += 1
+        produced += toTake
+        blockIndex += 1
+    return outputBuf.ToArray()
+
+
+def pbkdf2_hmac_sha256_hexdigest(password: bytes, salt: bytes, iterations: int, dklen: int) -> str:
+    return binascii.hexlify(pbkdf2_hmac_sha256(password, salt, iterations, dklen))

@@ -338,10 +338,48 @@ own output: `chain` (2- and 3-argument overloads — no `*args` support),
 `repeat(value, times)`, `islice`, `compress`, `accumulate` (`int`/`float`
 overloads, like `sum()`), `product`, `permutations`, `combinations`,
 `combinations_with_replacement`, `zip_longest`, `pairwise`, `batched`,
-`takewhile`, `dropwhile`, `filterfalse`.
+`takewhile`, `dropwhile`, `filterfalse`, `count`, `cycle`, infinite
+`repeat`.
 
-Infinite generators (`count`, `cycle`, no-`times` `repeat`) have no eager
-equivalent and aren't attempted.
+`count(start, step)` and `cycle(values)` are real, genuinely infinite
+`yield`-based generators, not eager `List`s — see this file's header for
+the full story of why "no eager equivalent, not attempted" turned out to
+be wrong. `count` needed no genericity; `cycle[T]` is a **generic**
+generator and was specifically verified not to hit the separate
+generic-type-parameter-plus-`.Invoke()` crash `takewhile`/`dropwhile`/
+`filterfalse` avoid by staying concrete — that crash needs *both* a
+generic type parameter *and* a `.Invoke()` call on a `dynamic`
+parameter, and `cycle` has no callable parameter at all, so neither
+precondition applies. Runtime-verified on Echoes against live CPython's
+own `itertools.count(10, 5)`/`itertools.cycle(['a','b','c'])`, each
+pulled via a `for` loop that breaks early (proving genuine laziness, not
+eager buffering) — every value matched exactly.
+
+**Was confirmed broken on Cooper and Toffee, now fixed upstream and
+independently re-verified.** A *consumer*'s use of a cross-assembly
+generator's yielded value (a generator defined in one compiled library —
+exactly `count`/`cycle`'s own shape — consumed from a separate project)
+used to fail: on Cooper, using the value in an expression failed to
+compile with an empty inferred type, and passing it to a dynamic call
+like `print(x)` crashed at runtime with a `ClassCastException`; on Toffee
+(all four sub-targets), the same usage failed to compile with an
+`Int32`/`NSDecimalNumber` mismatch. Root cause per the compiler team: the
+parser was committing an unresolved `for`-loop item to `dynamic` instead
+of recovering the element type from the generator's own metadata, and
+Cooper's generated iterator classes were erasing their generic signature
+across assembly boundaries. Fixed and re-verified here, not just taken on
+report: a full 15-target compile-only sweep of the original failing
+pattern now shows zero errors, and a real two-jar Cooper build (library
+compiled separately from its consumer) runs `count(10, 5)`/
+`cycle(['a','b','c'])` correctly end to end, matching CPython exactly.
+`count`/`cycle` are fully usable on all four backends today.
+
+No-`times` `repeat(value)` is now a real generator too — the same
+`while True: yield value` shape as `cycle`, added once the cross-assembly
+generator bug above was confirmed fixed. Runtime-verified against
+CPython's own `itertools.repeat(9)`, pulled via a `for` loop that breaks
+after 4 items: `9 9 9 9`, matching exactly. `repeat[T]` is generic, same
+as `cycle[T]`, with no callable parameter involved.
 
 `pairwise(values) -> List[tuple[T, T]]` and `batched(values, n) -> List
 [List[T]]` are plain list operations, no predicate needed, generic over

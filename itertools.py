@@ -3,14 +3,46 @@
 from Promethium import List, ValueError
 
 
-# A small, eager subset of Python's itertools module. CPython's itertools is
-# built entirely around lazy generators; Promethium generators are outside
-# the initial language slice (per PROMETHIUM_IMPLEMENTATION_PLAN.md), so
-# every function here returns a fully-materialized `List` instead of an
-# iterator — the same choice PromethiumBaseLibrary's own `range()` already
-# makes for the same reason. Infinite generators (`count`, `cycle`,
-# `repeat()` with no `times`) have no eager equivalent at all and are not
-# attempted.
+# A small subset of Python's itertools module. Most functions here return
+# a fully-materialized `List` instead of a lazy iterator (the same eager
+# choice PromethiumBaseLibrary's own `range()` makes) — this was originally
+# because "Promethium generators are outside the initial language slice
+# (per PROMETHIUM_IMPLEMENTATION_PLAN.md)", a claim taken from that doc
+# without testing it, which turned out to be stale: a direct probe found
+# real, genuinely lazy `yield`-based generator support (confirmed with an
+# infinite generator that returned immediately and stopped cleanly after 5
+# items via `break` — not eagerly buffered), and reading the actual
+# Promethium parser source confirmed this is deliberate, purpose-built
+# support (a real `yield` keyword token, `ParseYield`, `yield from`
+# desugaring, `MethodFlags.Iterator`) plugged into the same shared
+# iterator-lowering machinery Oxygene/C# use, with genuine per-backend
+# codegen (`FixCooper`/`FixEchoes`/`FixNougat` for Toffee) — not an
+# Echoes-only accident. `PROMETHIUM_V1_GRAMMAR.md`, a later and
+# authoritative doc, confirms statement-form `yield`/`yield from` generators
+# are in scope. `count`/`cycle` below are real generators on the strength of
+# this — genuinely infinite, no `List` materialization at all. Every other
+# function here stays eager; there was no reason to revisit them.
+#
+# **Was confirmed broken on Cooper and Toffee, now fixed upstream and
+# re-verified.** A *consumer*'s use of a value drawn from a cross-assembly
+# generator (a generator defined in one compiled library, like `count`/
+# `cycle` here, consumed from a separate project — the normal way library
+# code gets used) used to fail: on Cooper, using the value in an expression
+# failed to compile with an empty inferred type, and passing it to a
+# dynamic call like `print(x)` crashed at runtime with a
+# `ClassCastException`; on Toffee (all four sub-targets), the same
+# expression usage failed to compile with an `Int32`/`NSDecimalNumber`
+# mismatch. Root cause: the parser was committing an unresolved `for`-loop
+# item to `dynamic` instead of recovering `T` from the generator's
+# `IEnumerable<T>`-shaped metadata, and Cooper's generated iterator classes
+# were erasing their generic `Iterable<T>`/`Iterator<T>` signature across
+# assembly boundaries. Fixed upstream and independently re-verified here:
+# a full 15-target compile-only sweep of the original failing pattern shows
+# zero errors (Toffee's compile-time symptom is gone), and a real two-jar
+# Cooper build (`itertools.py` compiled separately from a consumer, exactly
+# this cross-assembly shape) now runs `count(10, 5)`/`cycle(names)`
+# correctly end to end, matching CPython exactly. `count`/`cycle` are fully
+# usable on all four backends today.
 #
 # Predicate-taking functions (`takewhile`, `dropwhile`, `filterfalse`)
 # *are* attempted, below, correcting this file's own earlier note that
@@ -98,6 +130,11 @@ def repeat[T](value: T, times: int) -> List[T]:
         result.append(value)
         count += 1
     return result
+
+
+def repeat[T](value: T):
+    while True:
+        yield value
 
 
 def islice[T](values: List[T], stop: int) -> List[T]:
@@ -357,3 +394,28 @@ def filterfalse(pred, values: List[int]) -> List[int]:
                 result.append(item)
             i += 1
         return result
+
+
+# Real generators, genuinely infinite — see this file's header for why
+# these were previously skipped as "no eager equivalent" and why that
+# turned out to be wrong. No predicate/callable parameter is involved in
+# either, so neither hits the separate generic-type-parameter +
+# `.Invoke()` crash `takewhile`/`dropwhile`/`filterfalse` above avoid by
+# staying concrete — `cycle` is generic over `T` and was specifically
+# verified not to hit that crash (it doesn't call `.Invoke()` on
+# anything, so the two preconditions for that bug never both apply).
+
+def count(start: int, step: int):
+    n: int = start
+    while True:
+        yield n
+        n += step
+
+
+def cycle[T](values: List[T]):
+    while True:
+        i: int = 0
+        n: int = len(values)
+        while i < n:
+            yield values.__getitem__(i)
+            i += 1

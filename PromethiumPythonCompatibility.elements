@@ -181,6 +181,7 @@
     <Compile Include="urllib.py" />
     <Compile Include="wave.py" />
     <Compile Include="email.py" />
+    <Compile Include="asyncio.py" />
     <Folder Include="collections">
       <Virtual>True</Virtual>
     </Folder>

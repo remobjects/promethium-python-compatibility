@@ -1075,6 +1075,62 @@ Runtime-verified against live CPython's own `email.utils.parseaddr`/
 a comma-containing name needing quotes — every result matched exactly,
 both directions.
 
+## `asyncio`
+
+A curated corner, not the module — a real event loop with I/O
+multiplexing (`asyncio`'s actual reason for existing) is squarely in the
+filesystem/process territory this project's own scope excludes. What's
+here corrects a narrower, separate "blocked" assumption: whether
+Python's `async def`/`await` *syntax* works in Promethium at all. It
+does — taken straight from `PROMETHIUM_IMPLEMENTATION_PLAN.md`'s
+exclusion list the same way `yield` was, and turned out just as wrong.
+`async def addAsync(a: int, b: int) -> int: return a + b` compiles clean
+across all 15 targets; calling it immediately returns a real task object
+(confirmed by printing its runtime type), and `await` correctly works
+*inside* another `async def` — a nested chain (`computeAsync` `await`ing
+`addAsync`) resolves correctly. Matching Python's own rule, `await`
+itself is rejected outside an `async def`.
+
+`run_int`/`run_str`/`run_float`/`run_bool` bridge that last rule: Python
+code routinely wants to call an async function and block for its result
+from *ordinary*, non-async code, the same role CPython's
+`asyncio.run(coro())` plays. Separate concrete functions, not overloads
+of one `run` and not a single generic `run[T]` — a generic version was
+tried and abandoned, the same "`T` only appears in the return position"
+gap `itertools.py`'s abandoned `starmap` already documents, since
+`task`'s own type is necessarily untyped/`dynamic` (no confirmed way to
+spell "a Task of statically-unknown T" as a parameter type).
+
+The member that actually reads the result is genuinely per-target,
+discovered by testing and reading the RTL source, not assumed. Echoes/
+Island: a real .NET `Task<T>`, read via `.Result`. Cooper: a *different*
+Elements-internal class, `RemObjects.Elements.System.
+TaskCompletionSourceTask<T>` — confirmed by printing its runtime class
+name after `.Result` crashed with `DynamicInvokeException: No element
+with this name: Result`, and a guessed `.get()` (matching Java's own
+`Future`) crashed too. Reading `com.remobjects.elements.rtl/Source/
+Task.pas` directly settled it: the property is declared `&Result: T read
+getResult`, and the compiled Java class exposes the real accessor as
+`getResult()` — which is what actually works, not `.Result`, despite
+that being how the Oxygene *source* spells the property. Toffee raises a
+clear `ValueError` instead of misbehaving — an untyped parameter erases
+to Objective-C `id` there, which exposes none of these spellings.
+
+Deviates from CPython's `asyncio.run(coro())` on purpose: CPython's
+coroutine objects are lazy; calling a Promethium `async def` function
+starts it running immediately and returns an already-in-flight task, so
+`run_int(...)` blocks on a task already underway, not the start of a
+lazy computation.
+
+Runtime-verified on **both Echoes and Cooper** with the same
+cross-assembly shape: a two-level async chain (`computeAsync` `await`ing
+a nested `addAsync(2, 3)`), both defined in a separately-compiled
+consumer project (not this library), resolved to `5` through
+`run_int(...)` on both — Cooper via a real build-and-run on a real JVM,
+not a compile check alone. Not yet tested on Island (presumably
+`.Result`-shaped like Echoes) or Toffee (raises by design, so nothing to
+runtime-test there).
+
 ## `xml`
 
 `parse(text) -> XmlTreeNode`, in the shape of `xml.etree.ElementTree`
@@ -1928,8 +1984,8 @@ be an unrelated real error whose diagnostics cascaded across files. Every
 `pprint.py`, `tomllib.py`, `time.py`, `queue.py`, `base64.py`,
 `binascii.py`, `codecs.py`, `struct.py`, `hashlib.py`, `hmac.py`,
 `PyByteArray.py`, `unittest.py`, `zlib.py`, `gzip.py`, `zipfile.py`,
-`tarfile.py`, `mimetypes.py`, `urllib.py`, `wave.py`, `email.py`) is a
-single global
+`tarfile.py`, `mimetypes.py`, `urllib.py`, `wave.py`, `email.py`,
+`asyncio.py`) is a single global
 `<Compile Include="..." />` item compiled
 for every target — including `DefaultDict.py`, whose Toffee-specific
 limitation is handled inside the source itself (see its section above)

@@ -182,6 +182,13 @@
     <Compile Include="wave.py" />
     <Compile Include="email.py" />
     <Compile Include="asyncio.py" />
+    <Compile Include="inspect.py" />
+    <Compile Include="numbers.py" />
+    <Compile Include="types.py" />
+    <Compile Include="abc.py" />
+    <Compile Include="reprlib.py" />
+    <Compile Include="marshal.py" />
+    <Compile Include="pickle.py" />
     <Folder Include="collections">
       <Virtual>True</Virtual>
     </Folder>

@@ -1131,6 +1131,48 @@ not a compile check alone. Not yet tested on Island (presumably
 `.Result`-shaped like Echoes) or Toffee (raises by design, so nothing to
 runtime-test there).
 
+## `inspect`
+
+A tiny, curated corner: `get_type_name(obj) -> str`, the equivalent of
+CPython's `type(obj).__name__`. Not a real port — CPython's `inspect` is
+built around introspecting CPython's own bytecode/frame objects
+(`getsource`, `getframeinfo`, parameter `Signature` details), none of
+which has an analog once compiled to a different backend. What carries
+over is the narrower, genuinely useful question: given a `dynamic`-held
+value, what's its real runtime type?
+
+Built on the reflection/dynamic-typing correction confirmed earlier this
+session. The *obvious* way to ask — `RemObjects.Elements.RTL.Reflection.
+Type.TypeOf(obj)`, a static method call with a `dynamic` argument —
+turned out to be a **new, real compiler bug**: even fully qualified, and
+even through an explicit `from ... import Type as ReflectionType` alias,
+the call crashed at runtime on Echoes with `OxygeneBinderException: No
+methods called "TypeOf" defined on "System.Type"` — the dynamic call
+site resolved to the *wrong* type (the ambient BCL `System.Type`, same
+short name) despite the source unambiguously naming the RTL2 one every
+way this project knows how to say it. An alias doesn't help because this
+is a runtime dynamic-dispatch bug, not a compile-time name-resolution
+one.
+
+The working alternative: an *instance* method call on the dynamic object
+itself (`obj.GetType()` on Echoes/Island) rather than a static method
+taking the object as an argument — the same shape of dynamic dispatch
+`functools.reduce`'s `.Invoke()` already uses successfully, not the
+shape that crashed here. Cooper's zero-argument `.getClass()` — nothing
+dynamic passed *into* it, just called *on* a dynamic receiver — still
+crashes, with the exact same `ClassCastException`-in-
+`DynamicHelpers.FindBestMatch` signature already seen for dynamic
+dispatch on generator values and async task objects. Three different
+features, the same crash signature, strongly suggesting one systemic
+Cooper dynamic-dispatch fragility rather than three unrelated bugs — not
+yet reported as a formal repro. Toffee not attempted (an untyped
+parameter erases to `id` there, the usual limitation). `get_type_name`
+raises a clear `ValueError` on both rather than misbehaving.
+
+Runtime-verified on Echoes: `get_type_name(Point(3, 4))` → `"Point"`,
+`get_type_name(5)` → `"Int32"`, `get_type_name("hello")` → `"String"` —
+a user-defined class and two built-ins, all correct.
+
 ## `xml`
 
 `parse(text) -> XmlTreeNode`, in the shape of `xml.etree.ElementTree`
@@ -1965,6 +2007,176 @@ total, spanning `int`/`str` for the equality assertions) produced the
 expected `5 passed, 5 failed` summary, correct `passed`/`failed` counts,
 and the expected five failure messages verbatim.
 
+## `numbers`
+
+`is_complex`/`is_real`/`is_rational`/`is_integral` — CPython's numeric-tower
+ABC classification (`Number > Complex > Real > Rational > Integral`) as
+concrete overload sets over `int`/`float`/`Fraction`/`DecimalValue`/
+`ComplexValue`, rather than `isinstance(x, numbers.X)` against a value of
+unknown type — Promethium is statically typed, so the caller already knows
+which concrete type it has by the time it could ask. No `dynamic` dispatch
+anywhere, unlike the reflection-based approaches this pass otherwise found
+fragile (see `promethium_reflection_static_dynamic_bug_and_cooper_pattern.md`).
+
+The table itself was transcribed from live CPython 3.12
+(`isinstance(v, numbers.X)` for each concrete type), not guessed — including
+the one surprising entry: `decimal.Decimal` is **not** registered against
+any `numbers` ABC in real CPython (a long-standing, deliberate stdlib
+decision, not an oversight), so `DecimalValue` correctly returns `False`
+across every tier here, same as CPython's `Decimal`.
+
+Runtime-verified against that same CPython matrix for all five concrete
+types across all four tiers.
+
+## `types`
+
+`SimpleNamespace` — a mutable attribute bag, CPython's most commonly-reached-
+for piece of the `types` module (the rest is runtime-type objects like
+`FunctionType`/`ModuleType`/`GeneratorType` with no meaningful analog in a
+statically-typed, compiled target). A faithful port would back it with a
+single heterogeneous `name -> value` mapping, but that needs two things this
+project has already found broken or fragile: `Dictionary` has no working
+external mutation path (`Dictionary.update(Dictionary)` throws at runtime,
+and it declares no `__setitem__` of its own — see `ChainMap.py`'s notes),
+and a single heterogeneous value slot would need `dynamic`/`typing.Any`
+storage.
+
+Backed instead by four parallel name/value `List` pairs, one per supported
+concrete type (`int`/`str`/`float`/`bool`) — `set_int`/`get_int`/`has_int`
+and the matching `_str`/`_float`/`_bool` trio, plus a `__str__` producing
+CPython's `namespace(a=1, b='x')`-style repr. `List` mutation (`append`,
+`__setitem__`) is solid, unlike `Dictionary`'s, so lookup is a plain linear
+scan. One real deviation from CPython: insertion order is preserved *within*
+each type group, not across all of them combined, since each type has its
+own list — `set_int("a", 1); set_str("b", "x"); set_int("c", 2)` prints
+`a`/`c` before `b`.
+
+Runtime-verified: mixed `set_int`/`set_str`/`set_bool` calls, `get_int`/
+`get_str` returning the right values, `has_int` correctly `False` for a
+missing key, and `__str__` producing `namespace(a=1, b=2, name='hello',
+flag=True)` in the documented per-type-group order.
+
+## `abc`
+
+CPython's `abc` has two moving parts: `ABCMeta` (a metaclass enforcing, at
+*instantiation* time, that every `@abstractmethod`-marked method got
+overridden) and the `@abstractmethod` decorator itself. Decorators are not
+supported in Promethium user code (the same wall `functools.wraps`/
+`dataclasses`/`contextlib` hit — see "No decorators" in the stdlib survey),
+so there's no way to port `@abstractmethod`'s actual enforcement. This item
+was originally filed as "unblocked by dynamic/Reflection" on the assumption
+Reflection could substitute for the decorator — it can't: nothing here needs
+to *inspect* anything, it needs a decorator to exist as a language feature.
+
+What already works today, with zero library support beyond one small gap, is
+the idiom Python itself used for "abstract" methods for years before `abc`
+existed: give the base method a body that raises `NotImplementedError`. The
+gap: `NotImplementedError` is a CPython *builtin*, not part of the real `abc`
+module, and Promethium has no built-in exception hierarchy at all beyond
+`Promethium.ValueError`/`Promethium.KeyError` — `raise
+NotImplementedError(...)` fails to compile ("Unknown identifier
+'NotImplementedError'") without it. Defined here as a plain `Exception`
+subclass (mirroring `ValueError`'s own shape) — a pragmatic bend of scope,
+since this is the one place in the standard library whose entire reason for
+existing is this idiom.
+
+`ABC` is a documented, empty marker base class matching `abc.ABC`'s name and
+spelling — useful only for signaling intent at the class-declaration site
+(`class Shape(ABC):`). It does **not**, and cannot, enforce anything at
+instantiation time the way CPython's `ABCMeta` does; only the `raise
+NotImplementedError` idiom itself provides any enforcement, and only when
+the method is actually called.
+
+Runtime-verified: a `Shape(ABC)` base with `area()` raising
+`NotImplementedError`, and a `Circle(Shape)` subclass overriding it, both
+compile and run correctly — `Circle(2.0).area()` returns `12.56636`, the
+overridden computation, not the exception.
+
+## `reprlib`
+
+`repr_str`/`repr_list_int`/`repr_list_str` — matching the *behavior* of
+`reprlib.repr(x)` for those three concrete shapes, not a generic `repr(obj)`
+over any value, the same concrete-overload choice as `numbers.py`/
+`asyncio.py`. CPython's defaults (`maxstring == 30`, `maxlist == 6`) are
+hardcoded rather than exposed as configurable fields — nobody in practice
+changes them.
+
+`repr_str`'s truncation was reverse-engineered from live CPython 3.12
+output, not guessed: `reprlib.repr('a'*50)` is exactly 30 characters
+including the quotes, 12 kept from the front and 13 from the back.
+CPython's own source computes this via an intermediate re-slice of an
+already-quoted string; this implementation nets out the same result
+algebraically without the intermediate step, and matches CPython
+byte-for-byte on the test case. `repr_list_int`/`repr_list_str`'s
+truncation is simpler and directly confirmed against CPython's
+`_repr_iterable`: always take the first `maxlist` (6) elements, and append
+a trailing `"..."` only if the original had more than 6 — a list of exactly
+6 elements is never truncated.
+
+Runtime-verified against the exact CPython outputs above, plus
+`repr_list_int`/`repr_list_str` for both the untruncated (6-element) and
+truncated (7-element) cases.
+
+## `marshal`
+
+CPython's `marshal` writes an internal, version-specific object-graph format
+(the same one `.pyc` files use) — undocumented on purpose, never guaranteed
+stable across Python versions, and never meant for real interop even
+between two CPython builds. There is nothing to be "compatible" with here
+the way `wave.py`/`zipfile.py` are compatible with a real, stable container
+format, so this ships its own small, fully-documented binary format instead.
+
+Concrete `dumps_int`/`loads_int`, `dumps_bool`/`loads_bool`, `dumps_str`/
+`loads_str` — built entirely on primitives already shipped and verified:
+`struct.pack_uint32_le`/`unpack_uint32_le` for the integer encoding,
+`codecs.encode`/`decode` for UTF-8 string bytes, and
+`RemObjects.Elements.RTL.Binary` for the growable buffer (`zipfile.py`'s
+established idiom for building/reading variable-length `bytes` payloads).
+`dumps_str`'s format is a 4-byte little-endian length prefix followed by
+that many UTF-8 bytes. No `dumps_float`/`loads_float` — needs a native
+bit-reinterpretation call that `struct.py` already scoped out as "a scope
+cut not an oversight"; same call, same reason, not attempted here either.
+
+Runtime-verified: `dumps_int(1234)`/`loads_int` round-trips to `1234`,
+`dumps_str("hello world")`/`loads_str` round-trips exactly, and
+`dumps_bool(True)`/`loads_bool` round-trips to `True`.
+
+## `pickle`
+
+CPython draws a real distinction between `marshal` (internal,
+version-specific, explicitly not meant for general use) and `pickle` (the
+general-purpose serializer people actually reach for, including for
+collections — `pickle.dumps([1, 2, 3])` is completely ordinary code).
+`dumps_int`/`dumps_bool`/`dumps_str` here are thin wrappers straight through
+to `marshal.py`'s identical functions (same format, no reason to duplicate
+the bytes); the real value pickle adds is `dumps_list_int`/`loads_list_int`,
+since serializing a collection is the thing people use `pickle` for far
+more than the scalar case.
+
+`dumps_list_int`'s format is a `struct.pack_uint32_le` count prefix followed
+by that many 4-byte little-endian integers, no per-item type tag — no
+heterogeneous or nested pickling the way real CPython `pickle` (which walks
+an arbitrary object graph via `__reduce__`) does, only a flat `List[int]`.
+That, and no custom-class support at all, are the real scope cuts from
+CPython's actual `pickle` — a full object-graph walker needs exactly the
+`dynamic`-typed single entry point this project has been avoiding all pass
+(see `promethium_reflection_static_dynamic_bug_and_cooper_pattern.md`), so
+it wasn't attempted.
+
+`copyreg` was investigated alongside this and correctly left unshipped
+rather than forced: its entire purpose in CPython is letting custom classes
+register a `__reduce__`-equivalent function to plug into `pickle`'s
+object-graph walk — and with `pickle` here scoped to primitives and one
+flat collection type, there is no object-graph walk for anything to plug
+into. Shipping a `copyreg.py` with nothing meaningful behind it would be a
+placeholder, not a port, so it stays on the "recommended, still pending"
+side of the ledger with this note rather than a fake done-card.
+
+Runtime-verified: `dumps_list_int([10, 20, 30])`/`loads_list_int` round-trips
+all three values exactly; `dumps_int`/`dumps_bool`/`dumps_str` produce
+byte-for-byte identical output to the equivalent `marshal.py` call (they are
+the same call).
+
 ## Build notes
 
 Each module lives in its own top-level `.py` file at the project root and
@@ -1985,7 +2197,8 @@ be an unrelated real error whose diagnostics cascaded across files. Every
 `binascii.py`, `codecs.py`, `struct.py`, `hashlib.py`, `hmac.py`,
 `PyByteArray.py`, `unittest.py`, `zlib.py`, `gzip.py`, `zipfile.py`,
 `tarfile.py`, `mimetypes.py`, `urllib.py`, `wave.py`, `email.py`,
-`asyncio.py`) is a single global
+`asyncio.py`, `inspect.py`, `numbers.py`, `types.py`, `abc.py`,
+`reprlib.py`, `marshal.py`, `pickle.py`) is a single global
 `<Compile Include="..." />` item compiled
 for every target — including `DefaultDict.py`, whose Toffee-specific
 limitation is handled inside the source itself (see its section above)

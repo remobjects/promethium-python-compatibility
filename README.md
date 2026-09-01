@@ -2155,27 +2155,299 @@ more than the scalar case.
 
 `dumps_list_int`'s format is a `struct.pack_uint32_le` count prefix followed
 by that many 4-byte little-endian integers, no per-item type tag — no
-heterogeneous or nested pickling the way real CPython `pickle` (which walks
-an arbitrary object graph via `__reduce__`) does, only a flat `List[int]`.
-That, and no custom-class support at all, are the real scope cuts from
-CPython's actual `pickle` — a full object-graph walker needs exactly the
-`dynamic`-typed single entry point this project has been avoiding all pass
-(see `promethium_reflection_static_dynamic_bug_and_cooper_pattern.md`), so
-it wasn't attempted.
+heterogeneous or nested pickling the way real CPython `pickle` does, only a
+flat `List[int]`.
 
-`copyreg` was investigated alongside this and correctly left unshipped
-rather than forced: its entire purpose in CPython is letting custom classes
-register a `__reduce__`-equivalent function to plug into `pickle`'s
-object-graph walk — and with `pickle` here scoped to primitives and one
-flat collection type, there is no object-graph walk for anything to plug
-into. Shipping a `copyreg.py` with nothing meaningful behind it would be a
-placeholder, not a port, so it stays on the "recommended, still pending"
-side of the ledger with this note rather than a fake done-card.
+`dumps_object(obj: object) -> bytes` / `loads_object(data: bytes, template:
+object) -> object` — a real, general-purpose object-graph pickle, added after
+revisiting the "would need exactly the `dynamic`-typed entry point this
+project has been avoiding" assessment above. Built on
+`RemObjects.Elements.RTL.Reflection` (`Type.TypeOf`, `.Fields`/
+`.MethodFields`, `Field.GetValue`/`SetValue`, `Type.Instantiate`) to
+serialize any object's `int`/`str`/`bool` fields by name and reconstruct a
+new instance elsewhere. **Runtime-verified working on all three of Echoes,
+Cooper, and Island** — Island confirmed via a genuine native ARM64 Mach-O
+binary built through the Core EBuild.dll path and run directly (not just a
+compile check) — the earlier "needs a `dynamic` entry point" concern turned
+out to be imprecise: the Cooper cross-assembly-dynamic-argument bug (see
+`promethium_reflection_static_dynamic_bug_and_cooper_pattern.md`) only fires
+when the *caller's own value* has static type `dynamic`/`typing.Any` at the
+call site — an ordinary `pickle.dumps_object(myPoint)` where `myPoint: Point`
+never touches it, since widening `Point` to an `object`-typed parameter is a
+normal, non-dynamic reference conversion. Confirmed by direct testing (not
+assumed): the identical reflection pipeline, entirely on `object`-typed
+parameters, round-trips a real object through a real two-jar Cooper/JVM
+build correctly.
+
+`loads_object` takes a `template: object` — a throwaway, already-constructed
+instance of the target type (`pickle.loads_object(data, Point())`) — instead
+of a type-name string, for a concrete reason, not a style preference:
+`RemObjects.Elements.RTL.Reflection.Type.GetType(name: string)` only
+searches the calling assembly plus the platform's base library, so a
+type-name lookup from inside this compiled library can never find a class
+defined in whatever *consumer* project calls it (confirmed: `Activator.
+CreateInstance` threw `ArgumentNullException` because `GetType` silently
+returned `null` for a real, correctly-spelled consumer class). `Type.TypeOf
+(template)` sidesteps this entirely, since it comes from a live object
+reference with full assembly binding already attached. `dumps_object` still
+writes the type's `FullName` into the data — used only as a sanity check on
+load (`loads_object` raises `ValueError` on a mismatch), not for lookup.
+
+Two real, documented scope cuts: no `float` field support (reading a `float`
+back out of its boxed `object` form needs a native bit-reinterpretation call
+that `marshal.py` already scoped out for the same reason — a `float` field
+raises a clear `ValueError` naming the field, not a silent wrong value), and
+the target class needs a parameterless constructor (`Type.Instantiate()`
+calls exactly that, per target — a real requirement any reflection-based
+serializer in any language shares, not unique to this project).
+
+**Toffee remains genuinely blocked**, for a reason no Promethium-side fix
+touches: `RemObjects.Elements.RTL.Reflection.Type.Get_Fields` is `raise new
+NotImplementedException("Reflection for Fields is not implemented yet for
+Cocoa")` in RTL2's own source — a real gap in RTL2 itself. `dumps_object`/
+`loads_object` raise a clear `ValueError` on Toffee instead of letting that
+native exception surface.
+
+`copyreg` still has nothing to register against and stays unshipped: its
+purpose in CPython is letting a *specific class* override how it gets
+pickled, but `dumps_object`/`loads_object` use one fixed, reflection-driven
+strategy for every object — there's no per-class hook in that design for
+`copyreg` to plug into.
 
 Runtime-verified: `dumps_list_int([10, 20, 30])`/`loads_list_int` round-trips
 all three values exactly; `dumps_int`/`dumps_bool`/`dumps_str` produce
 byte-for-byte identical output to the equivalent `marshal.py` call (they are
-the same call).
+the same call); `dumps_object`/`loads_object` round-trip a four-field class
+(`int`/`int`/`str`/`bool`) correctly on Echoes (`dotnet exec`), Cooper (a
+real two-jar JVM build/run), and Island (a real native ARM64 Mach-O binary,
+run directly, not just compiled) — re-dumping the reconstructed instance
+produces byte-identical output to the original on all three.
+
+## `gettext`
+
+Filed under "Locale & text data — needs real Unicode/locale data tables" in
+the stdlib survey, alongside `unicodedata`/`locale` — that was wrong.
+`gettext`'s actual job (parsing a compiled `.mo` catalog and looking up a
+translated string by its original) needs no Unicode category tables, no
+locale-aware collation, no platform locale data at all — it's pure binary
+file parsing, the same category `wave.py`/`zipfile.py`/`tarfile.py` already
+proved tractable, over a well-documented, stable format (GNU gettext's `.mo`
+binary layout, unchanged for decades).
+
+`Translations.load(data: bytes) -> Translations` parses a real `.mo` file
+(header, original/translated string offset tables — the hash table that
+follows is real but never read, the same "safe to skip" call CPython's own
+`GNUTranslations` makes) into a `gettext(msgid)`/`ngettext(singular, plural,
+n)` lookup object. Plural entries' NUL-separated blobs are split at the raw
+byte level before decoding to `str`, avoiding any need to search for an
+embedded NUL character inside a Promethium string.
+
+Real, documented scope cut: CPython parses an arbitrary C-style boolean
+expression out of the catalog's `Plural-Forms` header for plural selection
+(some languages need 3–6 forms with real logic). This only implements the
+single most common rule — `nplurals=2; plural=(n != 1)` (English, German,
+most Germanic/Romance languages) — no expression parser; a catalog needing a
+different rule still parses and looks up correctly, just always selects
+between form 0/1 by `n == 1` regardless of what its own header says.
+
+`gettext(msgid)` falls back to `msgid` unchanged when not found, matching
+CPython's own fallback behavior.
+
+Runtime-verified against a real `.mo` file compiled by GNU `msgfmt` from a
+small German catalog and cross-checked against live CPython's own
+`gettext.translation(...)` output on the identical file — exact match on
+both Echoes and Cooper: `gettext("Hello")` → `"Hallo"`, `gettext("Goodbye")`
+→ `"Auf Wiedersehen"`, `ngettext("%d apple", "%d apples", 1)` → `"%d Apfel"`,
+`ngettext("%d apple", "%d apples", 5)` → `"%d Aepfel"`.
+
+## `unicodedata` / `locale`
+
+Both were filed under "Locale & text data — needs real Unicode/locale data
+tables," a category assumed to need embedded data this project never
+attempted to build. That assumption was never actually tested. A direct
+probe found every target's own runtime already ships a full, correct
+Unicode character database and locale-aware formatting engine: .NET's
+`System.Globalization.CharUnicodeInfo`/`CultureInfo`/`String.Normalize` on
+Echoes, `java.lang.Character`/`java.text.Normalizer`/`NumberFormat`/
+`DecimalFormatSymbols`/`Collator` on Cooper, Foundation's `NSCharacterSet`/
+`NSString`/`NSLocale`/`NSNumberFormatter` on Toffee — nothing needed
+embedding, the same "check the platform before assuming a gap" correction
+this project has made repeatedly (native string ops, `re`, reflection,
+bytes).
+
+New RTL2 addition made to support this: `RemObjects.Elements.RTL.
+Globalization` (`Globalization.pas`) — a `UnicodeInfo` static class
+(`GetCategory`/`GetNumericValue`/`NormalizeNFC`/`NormalizeNFD`) and a
+`Culture` class (decimal/group separators, number/currency formatting,
+locale-aware comparison) wrapping those three native APIs behind one
+cross-platform interface, the same pattern RTL2's existing `DateTime`/
+`Regex`/`Reflection` already use for the same reason (each target's native
+API has a different shape).
+
+### `unicodedata`
+
+`category(ch)` maps a real 30-value `UnicodeCategory` enum to CPython's own
+two-letter codes (`"Lu"`, `"Nd"`, `"Zs"`, etc.) — exact, full-fidelity on
+Echoes and Cooper (both have a genuine native 30-way classification).
+Toffee is coarser by necessity: Foundation only exposes character-set
+*membership* tests, not a single "classify this character" call, so it
+distinguishes uppercase/lowercase letters, decimal digits, whitespace, and
+punctuation/symbol/control at a coarse level and falls back to the
+matching "Other*" code for anything finer.
+
+`normalize(form, s)` supports `"NFC"`/`"NFD"` only, not `"NFKC"`/`"NFKD"` —
+Toffee's `NSString` convenience methods only expose the canonical pair, so
+this module sticks to what's available on all three targets rather than
+have the compatibility forms silently work on two backends and fail on the
+third.
+
+`name()`/`lookup()` (Unicode's official character *names*) are the one
+piece genuinely not reachable this way — none of the three native APIs
+expose character names, only categories/normalization/numeric values —
+and aren't implemented; nothing in this module claims otherwise.
+
+Not available on Island (any sub-target), or on Toffee iOS/tvOS
+specifically right now — see "Known gaps" below.
+
+Runtime-verified against live CPython 3.12 on both Echoes and Cooper:
+`category('A')`/`category('5')`/`category(' ')`/`category('a')` →
+`"Lu"`/`"Nd"`/`"Zs"`/`"Ll"`; `digit('7')` → `7`, `decimal('3')` → `3`,
+`numeric('9')` → `9`; `normalize("NFC", ...)`/`normalize("NFD", ...)`
+round-trip a precomposed/decomposed "é" correctly.
+
+### `locale`
+
+API deviates from CPython's `locale.setlocale`/global-state model on
+purpose: CPython's `locale` module mutates process-wide global state that
+every subsequent call implicitly reads — there's no clean equivalent to
+"the current process locale" here, and a mutable global wouldn't be
+thread-safe across this project's targets anyway. `LocaleInfo(name)` is an
+explicit, instantiable object instead (`LocaleInfo("de-DE")`), matching
+this project's established "concrete object over ambient global state"
+choice (`random.RandomGenerator` over CPython's global `random.seed`).
+
+Named `LocaleInfo`, not `Locale` — RTL2 already has its own `Locale` class
+(unrelated timezone/locale plumbing), and a same-name class here hit the
+identical "duplicate short name" build error `Random`/`Decimal`/
+`XmlElement` already ran into elsewhere in this project.
+
+`decimal_point()`/`thousands_sep()` cover CPython's `localeconv()` dict's
+two most commonly used keys; `format_currency()` covers the actual
+currency-formatting use case directly rather than exposing raw formatting
+rules for a caller to apply by hand.
+
+Not available on Island (any sub-target), or on Toffee iOS/tvOS
+specifically right now — see "Known gaps" below.
+
+Runtime-verified against live output on both Echoes and Cooper:
+`LocaleInfo("de-DE").format_number(1234567.89, 2)` → `"1.234.567,89"`,
+`.decimal_point()` → `","`, `.thousands_sep()` → `"."`,
+`.format_currency(1234567.89)` → `"1.234.567,89 €"`;
+`LocaleInfo("en-US").strcoll_ignorecase("apple", "Banana")` → `-1`.
+
+## `gettext`
+
+Filed under the same "Locale & text data" bucket as `unicodedata`/
+`locale` — but wrongly: `gettext`'s actual job (parsing a compiled `.mo`
+catalog and looking up a translated string by its original) needs no
+Unicode category tables, no locale-aware collation, no platform locale
+data at all. It's pure binary file parsing, the same category `wave.py`/
+`zipfile.py`/`tarfile.py` already proved tractable, over a well-documented,
+stable format (GNU gettext's `.mo` binary layout, unchanged for decades) —
+no RTL2 changes needed for this one at all.
+
+`Translations.load(data: bytes) -> Translations` parses a real `.mo` file
+(header, original/translated string offset tables — the hash table that
+follows is real but never read, the same "safe to skip" call CPython's own
+`GNUTranslations` makes) into a `gettext(msgid)`/`ngettext(singular,
+plural, n)` lookup object. Plural entries' NUL-separated blobs are split
+at the raw byte level before decoding to `str`, avoiding any need to
+search for an embedded NUL character inside a Promethium string.
+
+Real, documented scope cut: CPython parses an arbitrary C-style boolean
+expression out of the catalog's `Plural-Forms` header for plural
+selection (some languages need 3–6 forms with real logic). This only
+implements the single most common rule — `nplurals=2; plural=(n != 1)`
+(English, German, most Germanic/Romance languages) — no expression
+parser; a catalog needing a different rule still parses and looks up
+correctly, just always selects between form 0/1 by `n == 1` regardless of
+what its own header says.
+
+`gettext(msgid)` falls back to `msgid` unchanged when not found, matching
+CPython's own fallback behavior. Works identically on every target,
+including Island — pure byte parsing, nothing native involved.
+
+Runtime-verified against a real `.mo` file compiled by GNU `msgfmt` from a
+small German catalog and cross-checked against live CPython's own
+`gettext.translation(...)` output on the identical file — exact match on
+both Echoes and Cooper: `gettext("Hello")` → `"Hallo"`, `gettext("Goodbye")`
+→ `"Auf Wiedersehen"`, `ngettext("%d apple", "%d apples", 1)` → `"%d Apfel"`,
+`ngettext("%d apple", "%d apples", 5)` → `"%d Aepfel"`.
+
+## Known gaps, tracked for a return pass
+
+Two upstream issues currently limit `pickle.dumps_object`/`loads_object`,
+both reported (see `promethium-bug-cooper-cross-assembly-dynamic-argument.md`
+and `rtl2-bug-toffee-fields-reflection-not-implemented.md`, sent to the user
+2026-08-31) and neither fixed as of this writing:
+
+1. **Cooper**: the cross-assembly-dynamic-argument compiler bug has a
+   confirmed, reliable workaround already in use (route the value through an
+   `object`-typed local first) — nothing is blocked today, but this is worth
+   revisiting once fixed upstream in case the workaround can be simplified
+   away.
+2. **Toffee**: genuinely blocked until RTL2 implements `Type.Get_Fields` for
+   Cocoa (currently `raise new NotImplementedException`). Once that lands,
+   `dumps_object`/`loads_object`'s `if defined("TOFFEE"): raise ValueError
+   (...)` guards should be revisited and very likely just deleted — the rest
+   of the implementation (`Type.Instantiate`, `Field.GetValue`/`SetValue`)
+   is already implemented for Cocoa in RTL2 today.
+
+Three more, found while adding `unicodedata`/`locale` (RTL2's new
+`Globalization.pas`):
+
+3. **Island (all sub-targets)**: `UnicodeInfo`/`Culture` raise
+   `NotImplementedException` unconditionally. Two separate causes: Island's
+   own native runtime has no character-category/normalization/locale API
+   at all (confirmed by reading its `String.pas` source directly), *and*
+   — independently — writing the same Foundation calls Toffee uses, in
+   this file, for `Island.Darwin` specifically, crashes the Elements
+   compiler itself (an internal codegen assertion failure, isolated to a
+   minimal repro with no Foundation/`new`-expression content at all —
+   even a bare two-member enum in this same namespace crashes Island
+   codegen on this host). Not yet formally written up as a third bug
+   report — worth doing before this gets revisited.
+4. **Toffee iOS/tvOS**: currently can't build *any* RTL2 change at all
+   (not specific to `Globalization.pas`) — `Elements.RTL.Toffee.iOS`/
+   `.tvOS` fail with `CFStringConvertIANACharSetNameToEncoding`/
+   `SecTrustEvaluate`-family "Unknown identifier" errors in
+   `Encoding.pas`/`HttpCertificateInfo.pas`/`Http.Cocoa.pas`/
+   `HttpResponse.Cocoa.pas` — none of them files this pass touched. Given
+   this blocks *any* RTL2 rebuild for those two sub-targets, not just this
+   feature, it's a pre-existing, environment-level RTL2 issue (plausibly
+   tied to this host's very new macOS 27.0 SDK) rather than something
+   introduced here. `unicodedata.py`/`locale.py` route around it with a
+   deliberately temporary `if defined("ISLAND") or defined("IOS") or
+   defined("TVOS")` guard — once RTL2 builds clean for iOS/tvOS again, that
+   `or defined("IOS") or defined("TVOS")` should just be deleted (the
+   underlying `Culture`/`UnicodeInfo` code is already exactly the same
+   Foundation calls that work on Toffee macOS/watchOS, which built clean
+   throughout).
+5. **RTL2 Toffee-Exe static-library linking**: a throwaway `Mode=Toffee`
+   Exe scratch project referencing a fresh `libElements.fx`/`.a` with a
+   brand-new top-level class (`Culture`/`UnicodeInfo`) fails to *link*
+   (`lld: undefined symbol: OBJC_CLASS_$__...`) even though `nm` confirms
+   the exported `OBJC_CLASS_$_...` symbols are genuinely present in
+   `libElements.a`, and even with `-ObjC -all_load` linker flags added.
+   The library *compiles* clean for Toffee (confirmed separately, several
+   times), and the exact same underlying Foundation API calls run
+   correctly when called directly from Promethium source (not through
+   this RTL2 wrapper) in the same scratch project — so this looks like a
+   linking/reference-wiring quirk specific to a bare Exe project pulling
+   in a new top-level RTL2 class, not a defect in the Pascal source or the
+   underlying native calls. Not yet root-caused; full compat-library-level
+   Toffee Exe runtime verification for `unicodedata`/`locale` is pending
+   this.
 
 ## Build notes
 
@@ -2198,7 +2470,8 @@ be an unrelated real error whose diagnostics cascaded across files. Every
 `PyByteArray.py`, `unittest.py`, `zlib.py`, `gzip.py`, `zipfile.py`,
 `tarfile.py`, `mimetypes.py`, `urllib.py`, `wave.py`, `email.py`,
 `asyncio.py`, `inspect.py`, `numbers.py`, `types.py`, `abc.py`,
-`reprlib.py`, `marshal.py`, `pickle.py`) is a single global
+`reprlib.py`, `marshal.py`, `pickle.py`, `gettext.py`, `unicodedata.py`,
+`locale.py`) is a single global
 `<Compile Include="..." />` item compiled
 for every target — including `DefaultDict.py`, whose Toffee-specific
 limitation is handled inside the source itself (see its section above)

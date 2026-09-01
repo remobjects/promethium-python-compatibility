@@ -189,6 +189,9 @@
     <Compile Include="reprlib.py" />
     <Compile Include="marshal.py" />
     <Compile Include="pickle.py" />
+    <Compile Include="gettext.py" />
+    <Compile Include="unicodedata.py" />
+    <Compile Include="locale.py" />
     <Folder Include="collections">
       <Virtual>True</Virtual>
     </Folder>

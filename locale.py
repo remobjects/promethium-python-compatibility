@@ -5,7 +5,7 @@ from Promethium import ValueError
 # Same correction as `unicodedata`'s: assumed blocked because it needs
 # "real locale data tables," never actually tested. Every target's own
 # runtime already ships full locale-aware number/currency formatting and
-# collation, built on top of `RemObjects.Elements.RTL.Globalization.Culture`
+# collation, built on top of `RemObjects.Elements.RTL.Culture`
 # (a new RTL2 addition made alongside this module): `System.Globalization.
 # CultureInfo` on Echoes, `java.util.Locale`/`NumberFormat`/
 # `DecimalFormatSymbols`/`Collator` on Cooper, `NSLocale`/`NSNumberFormatter`
@@ -28,7 +28,7 @@ from Promethium import ValueError
 # elsewhere in this project.
 #
 # `LocaleInfo` stores only the locale name (a plain `str`) and builds a
-# fresh `RemObjects.Elements.RTL.Globalization.Culture` inside each method
+# fresh `RemObjects.Elements.RTL.Culture` inside each method
 # rather than caching one in a typed field — deliberately, not for
 # performance: a class-level field typed as the RTL2 `Culture` class would
 # reference that type *unconditionally*, breaking compilation on any
@@ -69,43 +69,43 @@ class LocaleInfo:
         self._name = name
 
     def decimal_point(self) -> str:
-        if defined("ISLAND") or defined("IOS") or defined("TVOS"):
-            raise ValueError("locale.LocaleInfo is not available on Island, or on Toffee iOS/tvOS (blocked by an unrelated pre-existing RTL2 build issue on those two SDKs)")
+        if defined("ISLAND"):
+            raise ValueError("locale.LocaleInfo is not available on Island")
         else:
-            culture: RemObjects.Elements.RTL.Globalization.Culture = RemObjects.Elements.RTL.Globalization.Culture(self._name)
+            culture: RemObjects.Elements.RTL.Culture = RemObjects.Elements.RTL.Culture(self._name)
             return culture.DecimalSeparator
 
     def thousands_sep(self) -> str:
-        if defined("ISLAND") or defined("IOS") or defined("TVOS"):
-            raise ValueError("locale.LocaleInfo is not available on Island, or on Toffee iOS/tvOS (blocked by an unrelated pre-existing RTL2 build issue on those two SDKs)")
+        if defined("ISLAND"):
+            raise ValueError("locale.LocaleInfo is not available on Island")
         else:
-            culture: RemObjects.Elements.RTL.Globalization.Culture = RemObjects.Elements.RTL.Globalization.Culture(self._name)
+            culture: RemObjects.Elements.RTL.Culture = RemObjects.Elements.RTL.Culture(self._name)
             return culture.GroupSeparator
 
     def format_number(self, value: float, fraction_digits: int) -> str:
-        if defined("ISLAND") or defined("IOS") or defined("TVOS"):
-            raise ValueError("locale.LocaleInfo is not available on Island, or on Toffee iOS/tvOS (blocked by an unrelated pre-existing RTL2 build issue on those two SDKs)")
+        if defined("ISLAND"):
+            raise ValueError("locale.LocaleInfo is not available on Island")
         else:
-            culture: RemObjects.Elements.RTL.Globalization.Culture = RemObjects.Elements.RTL.Globalization.Culture(self._name)
+            culture: RemObjects.Elements.RTL.Culture = RemObjects.Elements.RTL.Culture(self._name)
             return culture.FormatNumber(value, fraction_digits)
 
     def format_currency(self, value: float) -> str:
-        if defined("ISLAND") or defined("IOS") or defined("TVOS"):
-            raise ValueError("locale.LocaleInfo is not available on Island, or on Toffee iOS/tvOS (blocked by an unrelated pre-existing RTL2 build issue on those two SDKs)")
+        if defined("ISLAND"):
+            raise ValueError("locale.LocaleInfo is not available on Island")
         else:
-            culture: RemObjects.Elements.RTL.Globalization.Culture = RemObjects.Elements.RTL.Globalization.Culture(self._name)
+            culture: RemObjects.Elements.RTL.Culture = RemObjects.Elements.RTL.Culture(self._name)
             return culture.FormatCurrency(value)
 
     def strcoll(self, a: str, b: str) -> int:
-        if defined("ISLAND") or defined("IOS") or defined("TVOS"):
-            raise ValueError("locale.LocaleInfo is not available on Island, or on Toffee iOS/tvOS (blocked by an unrelated pre-existing RTL2 build issue on those two SDKs)")
+        if defined("ISLAND"):
+            raise ValueError("locale.LocaleInfo is not available on Island")
         else:
-            culture: RemObjects.Elements.RTL.Globalization.Culture = RemObjects.Elements.RTL.Globalization.Culture(self._name)
+            culture: RemObjects.Elements.RTL.Culture = RemObjects.Elements.RTL.Culture(self._name)
             return culture.Compare(a, b, False)
 
     def strcoll_ignorecase(self, a: str, b: str) -> int:
-        if defined("ISLAND") or defined("IOS") or defined("TVOS"):
-            raise ValueError("locale.LocaleInfo is not available on Island, or on Toffee iOS/tvOS (blocked by an unrelated pre-existing RTL2 build issue on those two SDKs)")
+        if defined("ISLAND"):
+            raise ValueError("locale.LocaleInfo is not available on Island")
         else:
-            culture: RemObjects.Elements.RTL.Globalization.Culture = RemObjects.Elements.RTL.Globalization.Culture(self._name)
+            culture: RemObjects.Elements.RTL.Culture = RemObjects.Elements.RTL.Culture(self._name)
             return culture.Compare(a, b, True)

@@ -12,9 +12,9 @@ from Promethium import ValueError
 # a gap" correction this project has made repeatedly (native string ops,
 # `re`, reflection, bytes).
 #
-# `RemObjects.Elements.RTL.Globalization` (a new RTL2 addition made
+# `RemObjects.Elements.RTL.UnicodeInfo` (a new RTL2 addition made
 # alongside this module) wraps those three native APIs behind one
-# cross-platform `UnicodeInfo` class; this module is a thin Python-facing
+# cross-platform class; this module is a thin Python-facing
 # layer over it, matching CPython's `unicodedata.category(chr)`/
 # `normalize(form, s)`/`decimal(chr)`/`digit(chr)`/`numeric(chr)` shapes.
 #
@@ -65,89 +65,89 @@ from Promethium import ValueError
 
 
 def category(ch: str) -> str:
-    if defined("ISLAND") or defined("IOS") or defined("TVOS"):
-        raise ValueError("unicodedata.category is not available on Island, or on Toffee iOS/tvOS (blocked by an unrelated pre-existing RTL2 build issue on those two SDKs)")
+    if defined("ISLAND"):
+        raise ValueError("unicodedata.category is not available on Island")
     else:
-        cat: RemObjects.Elements.RTL.Globalization.UnicodeCategory = RemObjects.Elements.RTL.Globalization.UnicodeInfo.GetCategory(ch[0])
-        if cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.UppercaseLetter:
+        cat: RemObjects.Elements.RTL.UnicodeCategory = RemObjects.Elements.RTL.UnicodeInfo.GetCategory(ch[0])
+        if cat == RemObjects.Elements.RTL.UnicodeCategory.UppercaseLetter:
             return "Lu"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.LowercaseLetter:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.LowercaseLetter:
             return "Ll"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.TitlecaseLetter:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.TitlecaseLetter:
             return "Lt"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.ModifierLetter:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.ModifierLetter:
             return "Lm"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.OtherLetter:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.OtherLetter:
             return "Lo"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.NonSpacingMark:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.NonSpacingMark:
             return "Mn"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.SpacingCombiningMark:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.SpacingCombiningMark:
             return "Mc"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.EnclosingMark:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.EnclosingMark:
             return "Me"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.DecimalDigitNumber:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.DecimalDigitNumber:
             return "Nd"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.LetterNumber:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.LetterNumber:
             return "Nl"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.OtherNumber:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.OtherNumber:
             return "No"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.SpaceSeparator:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.SpaceSeparator:
             return "Zs"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.LineSeparator:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.LineSeparator:
             return "Zl"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.ParagraphSeparator:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.ParagraphSeparator:
             return "Zp"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.Control:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.Control:
             return "Cc"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.Format:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.Format:
             return "Cf"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.Surrogate:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.Surrogate:
             return "Cs"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.PrivateUse:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.PrivateUse:
             return "Co"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.ConnectorPunctuation:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.ConnectorPunctuation:
             return "Pc"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.DashPunctuation:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.DashPunctuation:
             return "Pd"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.OpenPunctuation:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.OpenPunctuation:
             return "Ps"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.ClosePunctuation:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.ClosePunctuation:
             return "Pe"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.InitialQuotePunctuation:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.InitialQuotePunctuation:
             return "Pi"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.FinalQuotePunctuation:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.FinalQuotePunctuation:
             return "Pf"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.OtherPunctuation:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.OtherPunctuation:
             return "Po"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.MathSymbol:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.MathSymbol:
             return "Sm"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.CurrencySymbol:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.CurrencySymbol:
             return "Sc"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.ModifierSymbol:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.ModifierSymbol:
             return "Sk"
-        elif cat == RemObjects.Elements.RTL.Globalization.UnicodeCategory.OtherSymbol:
+        elif cat == RemObjects.Elements.RTL.UnicodeCategory.OtherSymbol:
             return "So"
         else:
             return "Cn"
 
 
 def normalize(form: str, s: str) -> str:
-    if defined("ISLAND") or defined("IOS") or defined("TVOS"):
-        raise ValueError("unicodedata.normalize is not available on Island, or on Toffee iOS/tvOS (blocked by an unrelated pre-existing RTL2 build issue on those two SDKs)")
+    if defined("ISLAND"):
+        raise ValueError("unicodedata.normalize is not available on Island")
     else:
         if form == "NFC":
-            return RemObjects.Elements.RTL.Globalization.UnicodeInfo.NormalizeNFC(s)
+            return RemObjects.Elements.RTL.UnicodeInfo.NormalizeNFC(s)
         elif form == "NFD":
-            return RemObjects.Elements.RTL.Globalization.UnicodeInfo.NormalizeNFD(s)
+            return RemObjects.Elements.RTL.UnicodeInfo.NormalizeNFD(s)
         else:
             raise ValueError("unicodedata.normalize: only 'NFC' and 'NFD' are supported (no NFKC/NFKD)")
 
 
 def numeric(ch: str) -> float:
-    if defined("ISLAND") or defined("IOS") or defined("TVOS"):
-        raise ValueError("unicodedata.numeric is not available on Island, or on Toffee iOS/tvOS (blocked by an unrelated pre-existing RTL2 build issue on those two SDKs)")
+    if defined("ISLAND"):
+        raise ValueError("unicodedata.numeric is not available on Island")
     else:
-        value: float = RemObjects.Elements.RTL.Globalization.UnicodeInfo.GetNumericValue(ch[0])
+        value: float = RemObjects.Elements.RTL.UnicodeInfo.GetNumericValue(ch[0])
         if value != value:
             raise ValueError("unicodedata.numeric: not a numeric character")
         return value

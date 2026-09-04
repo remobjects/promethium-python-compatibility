@@ -41,13 +41,23 @@ from Promethium import List
 # from `dynamic`, and this is now the confirmed, verified workaround (not
 # a guess) for the cross-assembly-dynamic-argument bug.
 #
-# **Toffee is a separate, harder wall**: `RemObjects.Elements.RTL.
-# Reflection.Type.Get_Fields` is `raise new
-# NotImplementedException("Reflection for Fields is not implemented yet
-# for Cocoa")` in RTL2's own source — a real gap in RTL2 itself, not a
-# Promethium compiler bug, and not something any Promethium-side fix
-# touches. `dumps_object`/`loads_object` raise a clear `ValueError` on
-# Toffee rather than let that native exception surface.
+# **Toffee now works too.** `RemObjects.Elements.RTL.Reflection.Type.
+# Get_Fields` used to be `raise new NotImplementedException("Reflection
+# for Fields is not implemented yet for Cocoa")` in RTL2's own source — a
+# real gap in RTL2 itself, not a Promethium compiler bug. That's fixed
+# upstream now (`class_copyIvarList`/`ivar_getName`/`ivar_getTypeEncoding`
+# — real Objective-C ivar introspection, migrated into this project's
+# RTL2 checkout and verified with a real Toffee executable: field
+# enumeration, get/set by name, and a parameterless-constructor
+# `Instantiate()` round-trip all confirmed correct). Getting a genuinely
+# fresh build to actually *link* took real work: Toffee static-library
+# linking on this host doesn't reliably use whichever `libElements.a` is
+# referenced via `HintPath`/`ProjectReference` — `lld` was still pulling
+# in the toolchain's separate *ambient* reference copy regardless,
+# confirmed directly by `strings`-searching the built binary for should-
+# be-gone text from the old, unfixed code. Not a Promethium or RTL2
+# defect — a `lld` quirk on this host, per the person who actually
+# maintains this toolchain.
 #
 # No `float` field support: unlike `int`/`str`/`bool` (whose "is this
 # object of type X" check is a plain `Type.Name` string compare —
@@ -172,111 +182,110 @@ def _setFieldValue(fld: RemObjects.Elements.RTL.Reflection.Field, instance: obje
 
 
 def dumps_object(obj: object) -> bytes:
-    if defined("TOFFEE"):
-        raise ValueError("pickle.dumps_object is not available on Toffee — RTL2's field reflection isn't implemented for Cocoa")
-    else:
-        reflType: RemObjects.Elements.RTL.Reflection.Type = RemObjects.Elements.RTL.Reflection.Type.TypeOf(obj)
-        buf: RemObjects.Elements.RTL.Binary = RemObjects.Elements.RTL.Binary()
+    reflType: RemObjects.Elements.RTL.Reflection.Type = RemObjects.Elements.RTL.Reflection.Type.TypeOf(obj)
+    buf: RemObjects.Elements.RTL.Binary = RemObjects.Elements.RTL.Binary()
 
-        typeNameBytes: bytes = codecs.encode(reflType.FullName)
-        buf.Write(struct.pack_uint32_le(typeNameBytes.Length))
-        buf.Write(typeNameBytes)
+    typeNameBytes: bytes = codecs.encode(reflType.FullName)
+    buf.Write(struct.pack_uint32_le(typeNameBytes.Length))
+    buf.Write(typeNameBytes)
 
-        fields: RemObjects.Elements.RTL.ImmutableList[RemObjects.Elements.RTL.Reflection.Field] = _fieldsOf(reflType)
-        buf.Write(struct.pack_uint32_le(fields.Count))
+    fields: RemObjects.Elements.RTL.ImmutableList[RemObjects.Elements.RTL.Reflection.Field] = _fieldsOf(reflType)
+    buf.Write(struct.pack_uint32_le(fields.Count))
 
-        fi: int = 0
-        while fi < fields.Count:
-            fld: RemObjects.Elements.RTL.Reflection.Field = fields.__getitem__(fi)
-            nameBytes: bytes = codecs.encode(fld.Name)
-            buf.Write(struct.pack_uint32_le(nameBytes.Length))
-            buf.Write(nameBytes)
+    fi: int = 0
+    while fi < fields.Count:
+        fld: RemObjects.Elements.RTL.Reflection.Field = fields.__getitem__(fi)
+        nameBytes: bytes = codecs.encode(fld.Name)
+        buf.Write(struct.pack_uint32_le(nameBytes.Length))
+        buf.Write(nameBytes)
 
-            val: object = _getFieldValue(fld, obj)
-            valTypeName: str = RemObjects.Elements.RTL.Reflection.Type.TypeOf(val).Name
+        val: object = _getFieldValue(fld, obj)
+        valTypeName: str = RemObjects.Elements.RTL.Reflection.Type.TypeOf(val).Name
 
-            if valTypeName == "Int32" or valTypeName == "Integer":
-                buf.Write(b"\x00")
-                buf.Write(struct.pack_uint32_le(Integer(val)))
-            elif valTypeName == "String":
-                buf.Write(b"\x01")
-                strBytes: bytes = codecs.encode(val.ToString())
-                buf.Write(struct.pack_uint32_le(strBytes.Length))
-                buf.Write(strBytes)
-            elif valTypeName == "Boolean":
-                buf.Write(b"\x02")
-                boolByte: bytes = b"\x00"
-                if Boolean(val):
-                    boolByte[0] = 1
-                buf.Write(boolByte)
-            elif valTypeName == "Double" or valTypeName == "Single":
-                raise ValueError("pickle.dumps_object: field '" + fld.Name + "' is a float, which isn't supported yet (needs a native bit-reinterpretation call, same scope cut as marshal.py)")
+        if valTypeName == "Int32" or valTypeName == "Integer":
+            buf.Write(b"\x00")
+            buf.Write(struct.pack_uint32_le(Integer(val)))
+        elif valTypeName == "String" or valTypeName == "NSCFString" or valTypeName == "NSTaggedPointerString" or valTypeName == "__NSCFConstantString":
+            buf.Write(b"\x01")
+            strVal: str = ""
+            if defined("TOFFEE"):
+                strVal = val.description
             else:
-                raise ValueError("pickle.dumps_object: field '" + fld.Name + "' has unsupported type '" + valTypeName + "'")
-            fi += 1
+                strVal = val.ToString()
+            strBytes: bytes = codecs.encode(strVal)
+            buf.Write(struct.pack_uint32_le(strBytes.Length))
+            buf.Write(strBytes)
+        elif valTypeName == "Boolean" or valTypeName == "__NSCFBoolean":
+            buf.Write(b"\x02")
+            boolByte: bytes = b"\x00"
+            if Boolean(val):
+                boolByte[0] = 1
+            buf.Write(boolByte)
+        elif valTypeName == "Double" or valTypeName == "Single":
+            raise ValueError("pickle.dumps_object: field '" + fld.Name + "' is a float, which isn't supported yet (needs a native bit-reinterpretation call, same scope cut as marshal.py)")
+        else:
+            raise ValueError("pickle.dumps_object: field '" + fld.Name + "' has unsupported type '" + valTypeName + "'")
+        fi += 1
 
-        return buf.ToArray()
+    return buf.ToArray()
 
 
 def loads_object(data: bytes, template: object) -> object:
-    if defined("TOFFEE"):
-        raise ValueError("pickle.loads_object is not available on Toffee — RTL2's field reflection isn't implemented for Cocoa")
-    else:
-        pos: int = 0
-        typeNameLen: int = struct.unpack_uint32_le(marshal._extractBytes(data, pos, 4))
+    pos: int = 0
+    typeNameLen: int = struct.unpack_uint32_le(marshal._extractBytes(data, pos, 4))
+    pos += 4
+    typeName: str = codecs.decode(marshal._extractBytes(data, pos, typeNameLen))
+    pos += typeNameLen
+
+    reflType: RemObjects.Elements.RTL.Reflection.Type = RemObjects.Elements.RTL.Reflection.Type.TypeOf(template)
+    if reflType.FullName != typeName:
+        raise ValueError("pickle.loads_object: data was pickled from type '" + typeName + "' but template is a '" + reflType.FullName + "'")
+    newInstance: object = reflType.Instantiate()
+    fields: RemObjects.Elements.RTL.ImmutableList[RemObjects.Elements.RTL.Reflection.Field] = _fieldsOf(reflType)
+
+    fieldCount: int = struct.unpack_uint32_le(marshal._extractBytes(data, pos, 4))
+    pos += 4
+
+    fi: int = 0
+    while fi < fieldCount:
+        nameLen: int = struct.unpack_uint32_le(marshal._extractBytes(data, pos, 4))
         pos += 4
-        typeName: str = codecs.decode(marshal._extractBytes(data, pos, typeNameLen))
-        pos += typeNameLen
+        fieldName: str = codecs.decode(marshal._extractBytes(data, pos, nameLen))
+        pos += nameLen
 
-        reflType: RemObjects.Elements.RTL.Reflection.Type = RemObjects.Elements.RTL.Reflection.Type.TypeOf(template)
-        if reflType.FullName != typeName:
-            raise ValueError("pickle.loads_object: data was pickled from type '" + typeName + "' but template is a '" + reflType.FullName + "'")
-        newInstance: object = reflType.Instantiate()
-        fields: RemObjects.Elements.RTL.ImmutableList[RemObjects.Elements.RTL.Reflection.Field] = _fieldsOf(reflType)
+        tag: int = data[pos]
+        pos += 1
 
-        fieldCount: int = struct.unpack_uint32_le(marshal._extractBytes(data, pos, 4))
-        pos += 4
-
-        fi: int = 0
-        while fi < fieldCount:
-            nameLen: int = struct.unpack_uint32_le(marshal._extractBytes(data, pos, 4))
+        val: object
+        if tag == 0:
+            intVal: int = struct.unpack_uint32_le(marshal._extractBytes(data, pos, 4))
             pos += 4
-            fieldName: str = codecs.decode(marshal._extractBytes(data, pos, nameLen))
-            pos += nameLen
-
-            tag: int = data[pos]
+            val = intVal
+        elif tag == 1:
+            strLen: int = struct.unpack_uint32_le(marshal._extractBytes(data, pos, 4))
+            pos += 4
+            strVal: str = codecs.decode(marshal._extractBytes(data, pos, strLen))
+            pos += strLen
+            val = strVal
+        elif tag == 2:
+            boolVal: bool = data[pos] != 0
             pos += 1
+            val = boolVal
+        else:
+            raise ValueError("pickle.loads_object: unknown field type tag for field '" + fieldName + "'")
 
-            val: object
-            if tag == 0:
-                intVal: int = struct.unpack_uint32_le(marshal._extractBytes(data, pos, 4))
-                pos += 4
-                val = intVal
-            elif tag == 1:
-                strLen: int = struct.unpack_uint32_le(marshal._extractBytes(data, pos, 4))
-                pos += 4
-                strVal: str = codecs.decode(marshal._extractBytes(data, pos, strLen))
-                pos += strLen
-                val = strVal
-            elif tag == 2:
-                boolVal: bool = data[pos] != 0
-                pos += 1
-                val = boolVal
-            else:
-                raise ValueError("pickle.loads_object: unknown field type tag for field '" + fieldName + "'")
+        targetField: RemObjects.Elements.RTL.Reflection.Field = None
+        fj: int = 0
+        while fj < fields.Count:
+            candidate: RemObjects.Elements.RTL.Reflection.Field = fields.__getitem__(fj)
+            if candidate.Name == fieldName:
+                targetField = candidate
+                break
+            fj += 1
+        if targetField == None:
+            raise ValueError("pickle.loads_object: type '" + typeName + "' has no field named '" + fieldName + "'")
+        _setFieldValue(targetField, newInstance, val)
 
-            targetField: RemObjects.Elements.RTL.Reflection.Field = None
-            fj: int = 0
-            while fj < fields.Count:
-                candidate: RemObjects.Elements.RTL.Reflection.Field = fields.__getitem__(fj)
-                if candidate.Name == fieldName:
-                    targetField = candidate
-                    break
-                fj += 1
-            if targetField == None:
-                raise ValueError("pickle.loads_object: type '" + typeName + "' has no field named '" + fieldName + "'")
-            _setFieldValue(targetField, newInstance, val)
+        fi += 1
 
-            fi += 1
-
-        return newInstance
+    return newInstance

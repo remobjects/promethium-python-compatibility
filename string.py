@@ -48,54 +48,29 @@ def _upper(value: str) -> str:
         return value.uppercaseString
 
 
-def _lower(value: str) -> str:
-    if defined("ECHOES") or defined("ISLAND"):
-        return value.ToLower()
-    elif defined("COOPER"):
-        return value.toLowerCase()
-    else:
-        return value.lowercaseString
-
-
-def _length(value: str) -> int:
-    if defined("COOPER") or defined("TOFFEE"):
-        return value.length()
-    else:
-        return value.Length
-
-
-def _substring(value: str, start: int, count: int) -> str:
-    if defined("ECHOES") or defined("ISLAND"):
-        return value.Substring(start, count)
-    elif defined("COOPER"):
-        return value.substring(start, start + count)
-    else:
-        return value.substringWithRange(NSMakeRange(start, count))
-
-
 def _capitalizeWord(word: str) -> str:
-    if _length(word) == 0:
+    if _strutil.length(word) == 0:
         return word
-    first: str = _upper(_substring(word, 0, 1))
-    rest: str = _lower(_substring(word, 1, _length(word) - 1))
+    first: str = _upper(_strutil.substring(word, 0, 1))
+    rest: str = _strutil.lower(_strutil.substring(word, 1, _strutil.length(word) - 1))
     return first + rest
 
 
 def capwords(value: str) -> str:
     result: str = ""
     wordStart: int = 0
-    length: int = _length(value)
+    length: int = _strutil.length(value)
     index: int = 0
     while index <= length:
         atBoundary: bool = False
         if index == length:
             atBoundary = True
-        elif _substring(value, index, 1) == " ":
+        elif _strutil.substring(value, index, 1) == " ":
             atBoundary = True
         if atBoundary:
             if index > wordStart:
-                word: str = _substring(value, wordStart, index - wordStart)
-                if _length(result) > 0:
+                word: str = _strutil.substring(value, wordStart, index - wordStart)
+                if _strutil.length(result) > 0:
                     result += " "
                 result += _capitalizeWord(word)
             wordStart = index + 1
@@ -110,7 +85,7 @@ def _isAsciiWhitespace(ch: str) -> bool:
 def _startsWithAt(value: str, valueLength: int, needle: str, needleLength: int, index: int) -> bool:
     if needleLength == 0 or index + needleLength > valueLength:
         return False
-    return _substring(value, index, needleLength) == needle
+    return _strutil.substring(value, index, needleLength) == needle
 
 
 # `str.split`, standing in for native `String.Split` — the one native string
@@ -134,21 +109,21 @@ def _startsWithAt(value: str, valueLength: int, needle: str, needleLength: int, 
 # so it degrades to returning `[value]` unchanged instead.
 def split(value: str, sep: str = None) -> List[str]:
     result: List[str] = List[str]()
-    length: int = _length(value)
+    length: int = _strutil.length(value)
     if sep is None:
         tokenStart: int = -1
         index: int = 0
         while index <= length:
-            atSeparator: bool = index == length or _isAsciiWhitespace(_substring(value, index, 1))
+            atSeparator: bool = index == length or _isAsciiWhitespace(_strutil.substring(value, index, 1))
             if atSeparator:
                 if tokenStart >= 0:
-                    result.append(_substring(value, tokenStart, index - tokenStart))
+                    result.append(_strutil.substring(value, tokenStart, index - tokenStart))
                     tokenStart = -1
             elif tokenStart < 0:
                 tokenStart = index
             index += 1
         return result
-    sepLength: int = _length(sep)
+    sepLength: int = _strutil.length(sep)
     if sepLength == 0:
         result.append(value)
         return result
@@ -156,12 +131,12 @@ def split(value: str, sep: str = None) -> List[str]:
     index: int = 0
     while index <= length - sepLength:
         if _startsWithAt(value, length, sep, sepLength, index):
-            result.append(_substring(value, tokenStart, index - tokenStart))
+            result.append(_strutil.substring(value, tokenStart, index - tokenStart))
             index += sepLength
             tokenStart = index
         else:
             index += 1
-    result.append(_substring(value, tokenStart, length - tokenStart))
+    result.append(_strutil.substring(value, tokenStart, length - tokenStart))
     return result
 
 

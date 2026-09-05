@@ -22,22 +22,6 @@ from Promethium import List
 # nothing here is generic, but a stack was just as simple to write).
 
 
-def _length(value: str) -> int:
-    if defined("COOPER") or defined("TOFFEE"):
-        return value.length()
-    else:
-        return value.Length
-
-
-def _charAt(value: str, index: int) -> str:
-    if defined("ECHOES") or defined("ISLAND"):
-        return value.Substring(index, 1)
-    elif defined("COOPER"):
-        return value.substring(index, index + 1)
-    else:
-        return value.substringWithRange(NSMakeRange(index, 1))
-
-
 def _findLongestMatch(a: str, b: str, aLo: int, aHi: int, bLo: int, bHi: int) -> tuple[int, int, int]:
     bestI: int = aLo
     bestJ: int = bLo
@@ -47,7 +31,7 @@ def _findLongestMatch(a: str, b: str, aLo: int, aHi: int, bLo: int, bHi: int) ->
         j: int = bLo
         while j < bHi:
             size: int = 0
-            while i + size < aHi and j + size < bHi and _charAt(a, i + size) == _charAt(b, j + size):
+            while i + size < aHi and j + size < bHi and _strutil.charAt(a, i + size) == _strutil.charAt(b, j + size):
                 size += 1
             if size > bestSize:
                 bestI = i
@@ -61,7 +45,7 @@ def _findLongestMatch(a: str, b: str, aLo: int, aHi: int, bLo: int, bHi: int) ->
 def _matchingBlockSum(a: str, b: str) -> int:
     total: int = 0
     stack: List[tuple[int, int, int, int]] = List[tuple[int, int, int, int]]()
-    stack.append((0, _length(a), 0, _length(b)))
+    stack.append((0, _strutil.length(a), 0, _strutil.length(b)))
     while len(stack) > 0:
         region: tuple[int, int, int, int] = stack.__getitem__(len(stack) - 1)
         stack.pop(len(stack) - 1)
@@ -83,7 +67,7 @@ def _matchingBlockSum(a: str, b: str) -> int:
 
 
 def ratio(a: str, b: str) -> float:
-    totalLength: int = _length(a) + _length(b)
+    totalLength: int = _strutil.length(a) + _strutil.length(b)
     if totalLength == 0:
         return 1.0
     matched: int = _matchingBlockSum(a, b)

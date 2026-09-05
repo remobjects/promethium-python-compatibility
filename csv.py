@@ -18,33 +18,17 @@ from collections import OrderedDict
 # regex — see `string.py`'s notes on why).
 
 
-def _length(value: str) -> int:
-    if defined("COOPER") or defined("TOFFEE"):
-        return value.length()
-    else:
-        return value.Length
-
-
-def _substring(value: str, start: int, count: int) -> str:
-    if defined("ECHOES") or defined("ISLAND"):
-        return value.Substring(start, count)
-    elif defined("COOPER"):
-        return value.substring(start, start + count)
-    else:
-        return value.substringWithRange(NSMakeRange(start, count))
-
-
 def parse_line(line: str) -> List[str]:
     fields: List[str] = List[str]()
-    length: int = _length(line)
+    length: int = _strutil.length(line)
     index: int = 0
     field: str = ""
     inQuotes: bool = False
     while index < length:
-        ch: str = _substring(line, index, 1)
+        ch: str = _strutil.substring(line, index, 1)
         if inQuotes:
             if ch == "\"":
-                if index + 1 < length and _substring(line, index + 1, 1) == "\"":
+                if index + 1 < length and _strutil.substring(line, index + 1, 1) == "\"":
                     field += "\""
                     index += 1
                 else:
@@ -65,10 +49,10 @@ def parse_line(line: str) -> List[str]:
 
 
 def _fieldNeedsQuoting(field: str) -> bool:
-    length: int = _length(field)
+    length: int = _strutil.length(field)
     index: int = 0
     while index < length:
-        ch: str = _substring(field, index, 1)
+        ch: str = _strutil.substring(field, index, 1)
         if ch == "," or ch == "\"" or ch == "\n" or ch == "\r":
             return True
         index += 1
@@ -77,10 +61,10 @@ def _fieldNeedsQuoting(field: str) -> bool:
 
 def _quoteField(field: str) -> str:
     result: str = ""
-    length: int = _length(field)
+    length: int = _strutil.length(field)
     index: int = 0
     while index < length:
-        ch: str = _substring(field, index, 1)
+        ch: str = _strutil.substring(field, index, 1)
         if ch == "\"":
             result += "\"\""
         else:

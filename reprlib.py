@@ -36,13 +36,13 @@ from Promethium import List
 
 def repr_str(s: str) -> str:
     maxstring: int = 30
-    n: int = string._length(s)
+    n: int = _strutil.length(s)
     if n <= maxstring:
         return "'" + s + "'"
     i: int = (maxstring - 3) // 2
     j: int = maxstring - 3 - i
-    head: str = string._substring(s, 0, i - 1)
-    tail: str = string._substring(s, n - (j - 1), j - 1)
+    head: str = _strutil.substring(s, 0, i - 1)
+    tail: str = _strutil.substring(s, n - (j - 1), j - 1)
     return "'" + head + "..." + tail + "'"
 
 

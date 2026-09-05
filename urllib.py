@@ -58,12 +58,12 @@ def quote(s: str) -> str:
 
 def unquote(s: str) -> str:
     buf: RemObjects.Elements.RTL.Binary = RemObjects.Elements.RTL.Binary()
-    length: int = string._length(s)
+    length: int = _strutil.length(s)
     i: int = 0
     while i < length:
-        ch: str = string._substring(s, i, 1)
+        ch: str = _strutil.substring(s, i, 1)
         if ch == "%" and i + 2 < length:
-            hexPair: str = string._substring(s, i + 1, 2)
+            hexPair: str = _strutil.substring(s, i + 1, 2)
             buf.Write(binascii.unhexlify(hexPair))
             i += 3
         else:

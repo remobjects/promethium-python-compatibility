@@ -29,10 +29,10 @@
 
 
 def _needsQuoting(name: str) -> bool:
-    length: int = string._length(name)
+    length: int = _strutil.length(name)
     i: int = 0
     while i < length:
-        ch: str = string._substring(name, i, 1)
+        ch: str = _strutil.substring(name, i, 1)
         if ch == "," or ch == "\"" or ch == "<" or ch == ">" or ch == "@" or ch == ":" or ch == ";" or ch == "(" or ch == ")" or ch == "[" or ch == "]" or ch == ".":
             return True
         i += 1
@@ -41,10 +41,10 @@ def _needsQuoting(name: str) -> bool:
 
 def _quoteName(name: str) -> str:
     result: str = ""
-    length: int = string._length(name)
+    length: int = _strutil.length(name)
     i: int = 0
     while i < length:
-        ch: str = string._substring(name, i, 1)
+        ch: str = _strutil.substring(name, i, 1)
         if ch == "\"" or ch == "\\":
             result += "\\"
         result += ch
@@ -63,12 +63,12 @@ def formataddr(nameAndAddr: tuple[str, str]) -> str:
 
 
 def parseaddr(value: str) -> tuple[str, str]:
-    length: int = string._length(value)
+    length: int = _strutil.length(value)
     ltPos: int = -1
     gtPos: int = -1
     i: int = 0
     while i < length:
-        ch: str = string._substring(value, i, 1)
+        ch: str = _strutil.substring(value, i, 1)
         if ch == "<" and ltPos == -1:
             ltPos = i
         elif ch == ">" and ltPos != -1 and gtPos == -1:
@@ -78,11 +78,11 @@ def parseaddr(value: str) -> tuple[str, str]:
     if ltPos == -1 or gtPos == -1:
         return ("", configparser._trim(value))
 
-    namePart: str = configparser._trim(string._substring(value, 0, ltPos))
-    addrPart: str = string._substring(value, ltPos + 1, gtPos - ltPos - 1)
+    namePart: str = configparser._trim(_strutil.substring(value, 0, ltPos))
+    addrPart: str = _strutil.substring(value, ltPos + 1, gtPos - ltPos - 1)
 
-    nameLen: int = string._length(namePart)
-    if nameLen >= 2 and string._substring(namePart, 0, 1) == "\"" and string._substring(namePart, nameLen - 1, 1) == "\"":
-        namePart = string._substring(namePart, 1, nameLen - 2)
+    nameLen: int = _strutil.length(namePart)
+    if nameLen >= 2 and _strutil.substring(namePart, 0, 1) == "\"" and _strutil.substring(namePart, nameLen - 1, 1) == "\"":
+        namePart = _strutil.substring(namePart, 1, nameLen - 2)
 
     return (namePart, addrPart)

@@ -32,18 +32,8 @@ def weekday(year: int, month: int, day: int) -> int:
     return PyDate(year, month, day).weekday()
 
 
-def _daysInMonth(year: int, month: int) -> int:
-    if month == 2:
-        if isleap(year):
-            return 29
-        return 28
-    if month == 4 or month == 6 or month == 9 or month == 11:
-        return 30
-    return 31
-
-
 def monthrange(year: int, month: int) -> tuple[int, int]:
-    return (weekday(year, month, 1), _daysInMonth(year, month))
+    return (weekday(year, month, 1), datetime._daysInMonth(year, month))
 
 
 def month_name(index: int) -> str:

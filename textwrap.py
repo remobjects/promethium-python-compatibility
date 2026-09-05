@@ -20,36 +20,20 @@ from Promethium import List
 # on its own line rather than being sliced, a deliberate simplification).
 
 
-def _length(value: str) -> int:
-    if defined("COOPER") or defined("TOFFEE"):
-        return value.length()
-    else:
-        return value.Length
-
-
-def _substring(value: str, start: int, count: int) -> str:
-    if defined("ECHOES") or defined("ISLAND"):
-        return value.Substring(start, count)
-    elif defined("COOPER"):
-        return value.substring(start, start + count)
-    else:
-        return value.substringWithRange(NSMakeRange(start, count))
-
-
 def _words(text: str) -> List[str]:
     result: List[str] = List[str]()
-    length: int = _length(text)
+    length: int = _strutil.length(text)
     wordStart: int = 0
     index: int = 0
     while index <= length:
         atBoundary: bool = False
         if index == length:
             atBoundary = True
-        elif _substring(text, index, 1) == " ":
+        elif _strutil.substring(text, index, 1) == " ":
             atBoundary = True
         if atBoundary:
             if index > wordStart:
-                result.append(_substring(text, wordStart, index - wordStart))
+                result.append(_strutil.substring(text, wordStart, index - wordStart))
             wordStart = index + 1
         index += 1
     return result
@@ -62,15 +46,15 @@ def wrap(text: str, width: int) -> List[str]:
     index: int = 0
     while index < len(words):
         word: str = words.__getitem__(index)
-        if _length(current) == 0:
+        if _strutil.length(current) == 0:
             current = word
-        elif _length(current) + 1 + _length(word) <= width:
+        elif _strutil.length(current) + 1 + _strutil.length(word) <= width:
             current = current + " " + word
         else:
             lines.append(current)
             current = word
         index += 1
-    if _length(current) > 0:
+    if _strutil.length(current) > 0:
         lines.append(current)
     return lines
 

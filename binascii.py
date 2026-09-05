@@ -40,17 +40,8 @@
 # itself.
 
 
-def _lower(value: str) -> str:
-    if defined("ECHOES") or defined("ISLAND"):
-        return value.ToLower()
-    elif defined("COOPER"):
-        return value.toLowerCase()
-    else:
-        return value.lowercaseString
-
-
 def hexlify(data: bytes) -> str:
-    return _lower(RemObjects.Elements.RTL.Convert.ToHexString(data))
+    return _strutil.lower(RemObjects.Elements.RTL.Convert.ToHexString(data))
 
 
 def unhexlify(data: str) -> bytes:

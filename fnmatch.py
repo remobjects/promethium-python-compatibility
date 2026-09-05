@@ -16,17 +16,17 @@
 
 
 def fnmatch(name: str, pattern: str) -> bool:
-    nameLength: int = _length(name)
-    patternLength: int = _length(pattern)
+    nameLength: int = _strutil.length(name)
+    patternLength: int = _strutil.length(pattern)
     i: int = 0
     j: int = 0
     starIndex: int = -1
     matchIndex: int = 0
     while i < nameLength:
-        if j < patternLength and (_charAt(pattern, j) == "?" or _charAt(pattern, j) == _charAt(name, i)):
+        if j < patternLength and (_strutil.charAt(pattern, j) == "?" or _strutil.charAt(pattern, j) == _strutil.charAt(name, i)):
             i += 1
             j += 1
-        elif j < patternLength and _charAt(pattern, j) == "*":
+        elif j < patternLength and _strutil.charAt(pattern, j) == "*":
             starIndex = j
             matchIndex = i
             j += 1
@@ -36,22 +36,8 @@ def fnmatch(name: str, pattern: str) -> bool:
             i = matchIndex
         else:
             return False
-    while j < patternLength and _charAt(pattern, j) == "*":
+    while j < patternLength and _strutil.charAt(pattern, j) == "*":
         j += 1
     return j == patternLength
 
 
-def _length(value: str) -> int:
-    if defined("COOPER") or defined("TOFFEE"):
-        return value.length()
-    else:
-        return value.Length
-
-
-def _charAt(value: str, index: int) -> str:
-    if defined("ECHOES") or defined("ISLAND"):
-        return value.Substring(index, 1)
-    elif defined("COOPER"):
-        return value.substring(index, index + 1)
-    else:
-        return value.substringWithRange(NSMakeRange(index, 1))

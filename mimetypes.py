@@ -33,16 +33,16 @@
 
 
 def _extensionOf(filename: str) -> str:
-    length: int = string._length(filename)
+    length: int = _strutil.length(filename)
     lastDot: int = -1
     i: int = 0
     while i < length:
-        if string._substring(filename, i, 1) == ".":
+        if _strutil.substring(filename, i, 1) == ".":
             lastDot = i
         i += 1
     if lastDot == -1:
         return ""
-    return string._lower(string._substring(filename, lastDot, length - lastDot))
+    return _strutil.lower(_strutil.substring(filename, lastDot, length - lastDot))
 
 
 def guess_type(filename: str) -> tuple[str, str]:

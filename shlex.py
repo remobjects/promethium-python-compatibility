@@ -14,32 +14,17 @@ from Promethium import List
 # `configparser.py` (no `.Split`, no regex).
 
 
-def _length(value: str) -> int:
-    if defined("COOPER") or defined("TOFFEE"):
-        return value.length()
-    else:
-        return value.Length
-
-
-def _charAt(value: str, index: int) -> str:
-    if defined("ECHOES") or defined("ISLAND"):
-        return value.Substring(index, 1)
-    elif defined("COOPER"):
-        return value.substring(index, index + 1)
-    else:
-        return value.substringWithRange(NSMakeRange(index, 1))
-
 
 def split(value: str) -> List[str]:
     result: List[str] = List[str]()
-    length: int = _length(value)
+    length: int = _strutil.length(value)
     index: int = 0
     current: str = ""
     inToken: bool = False
     inSingle: bool = False
     inDouble: bool = False
     while index < length:
-        ch: str = _charAt(value, index)
+        ch: str = _strutil.charAt(value, index)
         if inSingle:
             if ch == "'":
                 inSingle = False
@@ -48,8 +33,8 @@ def split(value: str) -> List[str]:
         elif inDouble:
             if ch == "\"":
                 inDouble = False
-            elif ch == "\\" and index + 1 < length and (_charAt(value, index + 1) == "\"" or _charAt(value, index + 1) == "\\"):
-                current += _charAt(value, index + 1)
+            elif ch == "\\" and index + 1 < length and (_strutil.charAt(value, index + 1) == "\"" or _strutil.charAt(value, index + 1) == "\\"):
+                current += _strutil.charAt(value, index + 1)
                 index += 1
             else:
                 current += ch
@@ -61,7 +46,7 @@ def split(value: str) -> List[str]:
                 inDouble = True
                 inToken = True
             elif ch == "\\" and index + 1 < length:
-                current += _charAt(value, index + 1)
+                current += _strutil.charAt(value, index + 1)
                 index += 1
                 inToken = True
             elif ch == " " or ch == "\t" or ch == "\n":

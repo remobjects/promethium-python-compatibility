@@ -134,6 +134,7 @@
       <VirtualFolder>collections</VirtualFolder>
     </Compile>
     <Compile Include="LenOverloads.py" />
+    <Compile Include="_strutil.py" />
     <Compile Include="heapq.py" />
     <Compile Include="bisect.py" />
     <Compile Include="itertools.py" />

@@ -63,49 +63,8 @@ from collections import OrderedDict
 # from an int.
 
 
-def _length(value: str) -> int:
-    if defined("COOPER") or defined("TOFFEE"):
-        return value.length()
-    else:
-        return value.Length
-
-
-def _substring(value: str, start: int, count: int) -> str:
-    if defined("ECHOES") or defined("ISLAND"):
-        return value.Substring(start, count)
-    elif defined("COOPER"):
-        return value.substring(start, start + count)
-    else:
-        return value.substringWithRange(NSMakeRange(start, count))
-
-
 def _isWhitespace(ch: str) -> bool:
     return ch == " " or ch == "\t" or ch == "\n" or ch == "\r"
-
-
-def _parseIntText(value: str) -> int:
-    if defined("ECHOES") or defined("ISLAND"):
-        return Int32.Parse(value)
-    elif defined("COOPER"):
-        return Integer.parseInt(value)
-    else:
-        return value.intValue
-
-
-def _parseFloatText(value: str) -> float:
-    if defined("ECHOES") or defined("ISLAND"):
-        return Double.Parse(value)
-    elif defined("COOPER"):
-        return Double.parseDouble(value)
-    else:
-        return value.doubleValue
-
-
-def _isDigit(ch: str) -> bool:
-    return (
-        ch == "0" or ch == "1" or ch == "2" or ch == "3" or ch == "4"
-        or ch == "5" or ch == "6" or ch == "7" or ch == "8" or ch == "9"
-    )
 
 
 class JsonValueNode:
@@ -216,14 +175,14 @@ def json_object(value: OrderedDict[str, JsonValueNode]) -> JsonValueNode:
 
 def _skipWhitespace(text: str, index: int, length: int) -> int:
     i: int = index
-    while i < length and _isWhitespace(_substring(text, i, 1)):
+    while i < length and _isWhitespace(_strutil.substring(text, i, 1)):
         i += 1
     return i
 
 
 def _expectLiteral(text: str, index: int, length: int, literal: str):
-    literalLength: int = _length(literal)
-    if index + literalLength > length or _substring(text, index, literalLength) != literal:
+    literalLength: int = _strutil.length(literal)
+    if index + literalLength > length or _strutil.substring(text, index, literalLength) != literal:
         raise ValueError("json.loads: invalid literal")
 
 
@@ -233,13 +192,13 @@ def _parseString(text: str, index: int, length: int) -> tuple[str, int]:
     while True:
         if i >= length:
             raise ValueError("json.loads: unterminated string")
-        ch: str = _substring(text, i, 1)
+        ch: str = _strutil.substring(text, i, 1)
         if ch == "\"":
             return (result, i + 1)
         elif ch == "\\":
             if i + 1 >= length:
                 raise ValueError("json.loads: unterminated escape")
-            escapeChar: str = _substring(text, i + 1, 1)
+            escapeChar: str = _strutil.substring(text, i + 1, 1)
             if escapeChar == "\"":
                 result = result + "\""
             elif escapeChar == "\\":
@@ -269,34 +228,34 @@ def _parseString(text: str, index: int, length: int) -> tuple[str, int]:
 def _parseNumber(text: str, index: int, length: int) -> tuple[JsonValueNode, int]:
     start: int = index
     i: int = index
-    if i < length and _substring(text, i, 1) == "-":
+    if i < length and _strutil.substring(text, i, 1) == "-":
         i += 1
-    while i < length and _isDigit(_substring(text, i, 1)):
+    while i < length and _strutil.isDigit(_strutil.substring(text, i, 1)):
         i += 1
     isFloat: bool = False
-    if i < length and _substring(text, i, 1) == ".":
+    if i < length and _strutil.substring(text, i, 1) == ".":
         isFloat = True
         i += 1
-        while i < length and _isDigit(_substring(text, i, 1)):
+        while i < length and _strutil.isDigit(_strutil.substring(text, i, 1)):
             i += 1
-    if i < length and (_substring(text, i, 1) == "e" or _substring(text, i, 1) == "E"):
+    if i < length and (_strutil.substring(text, i, 1) == "e" or _strutil.substring(text, i, 1) == "E"):
         isFloat = True
         i += 1
-        if i < length and (_substring(text, i, 1) == "+" or _substring(text, i, 1) == "-"):
+        if i < length and (_strutil.substring(text, i, 1) == "+" or _strutil.substring(text, i, 1) == "-"):
             i += 1
-        while i < length and _isDigit(_substring(text, i, 1)):
+        while i < length and _strutil.isDigit(_strutil.substring(text, i, 1)):
             i += 1
-    numberText: str = _substring(text, start, i - start)
+    numberText: str = _strutil.substring(text, start, i - start)
     if isFloat:
-        return (json_float(_parseFloatText(numberText)), i)
+        return (json_float(_strutil.parseFloatText(numberText)), i)
     else:
-        return (json_int(_parseIntText(numberText)), i)
+        return (json_int(_strutil.parseIntText(numberText)), i)
 
 
 def _parseArray(text: str, index: int, length: int) -> tuple[JsonValueNode, int]:
     items: List[JsonValueNode] = List[JsonValueNode]()
     i: int = _skipWhitespace(text, index + 1, length)
-    if i < length and _substring(text, i, 1) == "]":
+    if i < length and _strutil.substring(text, i, 1) == "]":
         return (json_array(items), i + 1)
     while True:
         itemResult: tuple[JsonValueNode, int] = _parseValue(text, i, length)
@@ -304,7 +263,7 @@ def _parseArray(text: str, index: int, length: int) -> tuple[JsonValueNode, int]
         i = _skipWhitespace(text, itemResult[1], length)
         if i >= length:
             raise ValueError("json.loads: unterminated array")
-        ch: str = _substring(text, i, 1)
+        ch: str = _strutil.substring(text, i, 1)
         if ch == ",":
             i = _skipWhitespace(text, i + 1, length)
         elif ch == "]":
@@ -316,15 +275,15 @@ def _parseArray(text: str, index: int, length: int) -> tuple[JsonValueNode, int]
 def _parseObject(text: str, index: int, length: int) -> tuple[JsonValueNode, int]:
     entries: OrderedDict[str, JsonValueNode] = OrderedDict[str, JsonValueNode]()
     i: int = _skipWhitespace(text, index + 1, length)
-    if i < length and _substring(text, i, 1) == "}":
+    if i < length and _strutil.substring(text, i, 1) == "}":
         return (json_object(entries), i + 1)
     while True:
         i = _skipWhitespace(text, i, length)
-        if i >= length or _substring(text, i, 1) != "\"":
+        if i >= length or _strutil.substring(text, i, 1) != "\"":
             raise ValueError("json.loads: expected string key in object")
         keyResult: tuple[str, int] = _parseString(text, i, length)
         i = _skipWhitespace(text, keyResult[1], length)
-        if i >= length or _substring(text, i, 1) != ":":
+        if i >= length or _strutil.substring(text, i, 1) != ":":
             raise ValueError("json.loads: expected ':' after object key")
         i = _skipWhitespace(text, i + 1, length)
         valueResult: tuple[JsonValueNode, int] = _parseValue(text, i, length)
@@ -332,7 +291,7 @@ def _parseObject(text: str, index: int, length: int) -> tuple[JsonValueNode, int
         i = _skipWhitespace(text, valueResult[1], length)
         if i >= length:
             raise ValueError("json.loads: unterminated object")
-        ch: str = _substring(text, i, 1)
+        ch: str = _strutil.substring(text, i, 1)
         if ch == ",":
             i = _skipWhitespace(text, i + 1, length)
         elif ch == "}":
@@ -345,7 +304,7 @@ def _parseValue(text: str, index: int, length: int) -> tuple[JsonValueNode, int]
     i: int = _skipWhitespace(text, index, length)
     if i >= length:
         raise ValueError("json.loads: unexpected end of input")
-    ch: str = _substring(text, i, 1)
+    ch: str = _strutil.substring(text, i, 1)
     if ch == "{":
         return _parseObject(text, i, length)
     elif ch == "[":
@@ -362,14 +321,14 @@ def _parseValue(text: str, index: int, length: int) -> tuple[JsonValueNode, int]
     elif ch == "n":
         _expectLiteral(text, i, length, "null")
         return (json_null(), i + 4)
-    elif ch == "-" or _isDigit(ch):
+    elif ch == "-" or _strutil.isDigit(ch):
         return _parseNumber(text, i, length)
     else:
         raise ValueError("json.loads: unexpected character")
 
 
 def loads(text: str) -> JsonValueNode:
-    length: int = _length(text)
+    length: int = _strutil.length(text)
     result: tuple[JsonValueNode, int] = _parseValue(text, 0, length)
     trailing: int = _skipWhitespace(text, result[1], length)
     if trailing != length:
@@ -379,11 +338,11 @@ def loads(text: str) -> JsonValueNode:
 
 def _dumpFloat(value: float) -> str:
     text: str = "" + value
-    length: int = _length(text)
+    length: int = _strutil.length(text)
     i: int = 0
     hasDecimalMarker: bool = False
     while i < length:
-        ch: str = _substring(text, i, 1)
+        ch: str = _strutil.substring(text, i, 1)
         if ch == "." or ch == "e" or ch == "E":
             hasDecimalMarker = True
         i += 1
@@ -394,10 +353,10 @@ def _dumpFloat(value: float) -> str:
 
 def _dumpString(value: str) -> str:
     result: str = "\""
-    length: int = _length(value)
+    length: int = _strutil.length(value)
     i: int = 0
     while i < length:
-        ch: str = _substring(value, i, 1)
+        ch: str = _strutil.substring(value, i, 1)
         if ch == "\"":
             result = result + "\\\""
         elif ch == "\\":

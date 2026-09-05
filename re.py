@@ -62,43 +62,27 @@ def _isAsciiDigit(ch: str) -> bool:
     )
 
 
-def _length(value: str) -> int:
-    if defined("COOPER") or defined("TOFFEE"):
-        return value.length()
-    else:
-        return value.Length
-
-
-def _substring(value: str, start: int, count: int) -> str:
-    if defined("ECHOES") or defined("ISLAND"):
-        return value.Substring(start, count)
-    elif defined("COOPER"):
-        return value.substring(start, start + count)
-    else:
-        return value.substringWithRange(NSMakeRange(start, count))
-
-
 def _convertReplacement(repl: str) -> str:
     result: str = ""
-    length: int = _length(repl)
+    length: int = _strutil.length(repl)
     i: int = 0
     while i < length:
-        ch: str = _substring(repl, i, 1)
+        ch: str = _strutil.substring(repl, i, 1)
         if ch == "\\" and i + 1 < length:
-            nextCh: str = _substring(repl, i + 1, 1)
+            nextCh: str = _strutil.substring(repl, i + 1, 1)
             if _isAsciiDigit(nextCh):
                 j: int = i + 1
                 digits: str = ""
-                while j < length and _isAsciiDigit(_substring(repl, j, 1)):
-                    digits = digits + _substring(repl, j, 1)
+                while j < length and _isAsciiDigit(_strutil.substring(repl, j, 1)):
+                    digits = digits + _strutil.substring(repl, j, 1)
                     j += 1
                 result = result + "$" + digits
                 i = j
-            elif nextCh == "g" and i + 2 < length and _substring(repl, i + 2, 1) == "<":
+            elif nextCh == "g" and i + 2 < length and _strutil.substring(repl, i + 2, 1) == "<":
                 j: int = i + 3
                 digits: str = ""
-                while j < length and _substring(repl, j, 1) != ">":
-                    digits = digits + _substring(repl, j, 1)
+                while j < length and _strutil.substring(repl, j, 1) != ">":
+                    digits = digits + _strutil.substring(repl, j, 1)
                     j += 1
                 result = result + "$" + digits
                 i = j + 1
@@ -145,7 +129,7 @@ class Match:
         return self._index
 
     def end(self) -> int:
-        return self._index + _length(self._value)
+        return self._index + _strutil.length(self._value)
 
     def span(self) -> tuple[int, int]:
         return (self.start(), self.end())
@@ -206,15 +190,15 @@ class Pattern:
             if raw is None:
                 break
             m: RemObjects.Elements.RTL.RegexMatch = raw
-            result = result + _substring(remaining, 0, m.Index) + Match(m).group(0)
+            result = result + _strutil.substring(remaining, 0, m.Index) + Match(m).group(0)
             matched: str = m.Value
-            tailStart: int = m.Index + _length(matched)
-            remaining = _substring(remaining, tailStart, _length(remaining) - tailStart)
+            tailStart: int = m.Index + _strutil.length(matched)
+            remaining = _strutil.substring(remaining, tailStart, _strutil.length(remaining) - tailStart)
             done += 1
-            if _length(matched) == 0:
-                if _length(remaining) > 0:
-                    result = result + _substring(remaining, 0, 1)
-                    remaining = _substring(remaining, 1, _length(remaining) - 1)
+            if _strutil.length(matched) == 0:
+                if _strutil.length(remaining) > 0:
+                    result = result + _strutil.substring(remaining, 0, 1)
+                    remaining = _strutil.substring(remaining, 1, _strutil.length(remaining) - 1)
                 else:
                     break
         return result + remaining
@@ -261,10 +245,10 @@ def split(pattern: str, text: str) -> List[str]:
 
 def escape(text: str) -> str:
     result: str = ""
-    length: int = _length(text)
+    length: int = _strutil.length(text)
     i: int = 0
     while i < length:
-        ch: str = _substring(text, i, 1)
+        ch: str = _strutil.substring(text, i, 1)
         isSpecial: bool = (
             ch == "\\" or ch == "." or ch == "^" or ch == "$" or ch == "*"
             or ch == "+" or ch == "?" or ch == "{" or ch == "}" or ch == "["

@@ -28,49 +28,8 @@ from json import JsonValueNode
 # `ValueError` rather than being silently misparsed.
 
 
-def _length(value: str) -> int:
-    if defined("COOPER") or defined("TOFFEE"):
-        return value.length()
-    else:
-        return value.Length
-
-
-def _substring(value: str, start: int, count: int) -> str:
-    if defined("ECHOES") or defined("ISLAND"):
-        return value.Substring(start, count)
-    elif defined("COOPER"):
-        return value.substring(start, start + count)
-    else:
-        return value.substringWithRange(NSMakeRange(start, count))
-
-
-def _parseIntText(value: str) -> int:
-    if defined("ECHOES") or defined("ISLAND"):
-        return Int32.Parse(value)
-    elif defined("COOPER"):
-        return Integer.parseInt(value)
-    else:
-        return value.intValue
-
-
-def _parseFloatText(value: str) -> float:
-    if defined("ECHOES") or defined("ISLAND"):
-        return Double.Parse(value)
-    elif defined("COOPER"):
-        return Double.parseDouble(value)
-    else:
-        return value.doubleValue
-
-
-def _isDigit(ch: str) -> bool:
-    return (
-        ch == "0" or ch == "1" or ch == "2" or ch == "3" or ch == "4"
-        or ch == "5" or ch == "6" or ch == "7" or ch == "8" or ch == "9"
-    )
-
-
 def _isBareKeyChar(ch: str) -> bool:
-    if _isDigit(ch):
+    if _strutil.isDigit(ch):
         return True
     if ch == "_" or ch == "-":
         return True
@@ -89,7 +48,7 @@ def _isNewline(ch: str) -> bool:
 
 def _skipInlineWhitespace(text: str, index: int, length: int) -> int:
     i: int = index
-    while i < length and _isInlineWhitespace(_substring(text, i, 1)):
+    while i < length and _isInlineWhitespace(_strutil.substring(text, i, 1)):
         i += 1
     return i
 
@@ -99,11 +58,11 @@ def _skipInlineWhitespace(text: str, index: int, length: int) -> int:
 def _skipLayout(text: str, index: int, length: int) -> int:
     i: int = index
     while i < length:
-        ch: str = _substring(text, i, 1)
+        ch: str = _strutil.substring(text, i, 1)
         if _isInlineWhitespace(ch) or _isNewline(ch):
             i += 1
         elif ch == "#":
-            while i < length and not _isNewline(_substring(text, i, 1)):
+            while i < length and not _isNewline(_strutil.substring(text, i, 1)):
                 i += 1
         else:
             break
@@ -111,26 +70,26 @@ def _skipLayout(text: str, index: int, length: int) -> int:
 
 
 def _expectChar(text: str, index: int, length: int, expected: str) -> int:
-    if index >= length or _substring(text, index, 1) != expected:
+    if index >= length or _strutil.substring(text, index, 1) != expected:
         raise ValueError("tomllib.loads: expected '" + expected + "'")
     return index + 1
 
 
 def _parseBasicString(text: str, index: int, length: int) -> tuple[str, int]:
     i: int = index + 1
-    if i + 1 < length and _substring(text, i, 2) == "\"\"":
+    if i + 1 < length and _strutil.substring(text, i, 2) == "\"\"":
         raise ValueError("tomllib.loads: multi-line strings are not supported")
     result: str = ""
     while True:
         if i >= length:
             raise ValueError("tomllib.loads: unterminated string")
-        ch: str = _substring(text, i, 1)
+        ch: str = _strutil.substring(text, i, 1)
         if ch == "\"":
             return (result, i + 1)
         elif ch == "\\":
             if i + 1 >= length:
                 raise ValueError("tomllib.loads: unterminated escape")
-            escapeChar: str = _substring(text, i + 1, 1)
+            escapeChar: str = _strutil.substring(text, i + 1, 1)
             if escapeChar == "\"":
                 result = result + "\""
             elif escapeChar == "\\":
@@ -157,13 +116,13 @@ def _parseBasicString(text: str, index: int, length: int) -> tuple[str, int]:
 
 def _parseLiteralString(text: str, index: int, length: int) -> tuple[str, int]:
     i: int = index + 1
-    if i + 1 < length and _substring(text, i, 2) == "''":
+    if i + 1 < length and _strutil.substring(text, i, 2) == "''":
         raise ValueError("tomllib.loads: multi-line strings are not supported")
     result: str = ""
     while True:
         if i >= length:
             raise ValueError("tomllib.loads: unterminated string")
-        ch: str = _substring(text, i, 1)
+        ch: str = _strutil.substring(text, i, 1)
         if ch == "'":
             return (result, i + 1)
         elif _isNewline(ch):
@@ -176,7 +135,7 @@ def _parseLiteralString(text: str, index: int, length: int) -> tuple[str, int]:
 def _parseBareOrQuotedKey(text: str, index: int, length: int) -> tuple[str, int]:
     if index >= length:
         raise ValueError("tomllib.loads: expected a key")
-    ch: str = _substring(text, index, 1)
+    ch: str = _strutil.substring(text, index, 1)
     if ch == "\"":
         return _parseBasicString(text, index, length)
     elif ch == "'":
@@ -184,9 +143,9 @@ def _parseBareOrQuotedKey(text: str, index: int, length: int) -> tuple[str, int]
     elif _isBareKeyChar(ch):
         start: int = index
         i: int = index
-        while i < length and _isBareKeyChar(_substring(text, i, 1)):
+        while i < length and _isBareKeyChar(_strutil.substring(text, i, 1)):
             i += 1
-        return (_substring(text, start, i - start), i)
+        return (_strutil.substring(text, start, i - start), i)
     else:
         raise ValueError("tomllib.loads: invalid key")
 
@@ -197,7 +156,7 @@ def _parseKeyPath(text: str, index: int, length: int) -> tuple[List[str], int]:
     firstResult: tuple[str, int] = _parseBareOrQuotedKey(text, i, length)
     path.append(firstResult[0])
     i = _skipInlineWhitespace(text, firstResult[1], length)
-    while i < length and _substring(text, i, 1) == ".":
+    while i < length and _strutil.substring(text, i, 1) == ".":
         i = _skipInlineWhitespace(text, i + 1, length)
         segmentResult: tuple[str, int] = _parseBareOrQuotedKey(text, i, length)
         path.append(segmentResult[0])
@@ -207,10 +166,10 @@ def _parseKeyPath(text: str, index: int, length: int) -> tuple[List[str], int]:
 
 def _removeUnderscores(text: str) -> str:
     result: str = ""
-    length: int = _length(text)
+    length: int = _strutil.length(text)
     i: int = 0
     while i < length:
-        ch: str = _substring(text, i, 1)
+        ch: str = _strutil.substring(text, i, 1)
         if ch != "_":
             result = result + ch
         i += 1
@@ -220,35 +179,35 @@ def _removeUnderscores(text: str) -> str:
 def _parseNumberOrDate(text: str, index: int, length: int) -> tuple[JsonValueNode, int]:
     start: int = index
     i: int = index
-    if i < length and (_substring(text, i, 1) == "-" or _substring(text, i, 1) == "+"):
+    if i < length and (_strutil.substring(text, i, 1) == "-" or _strutil.substring(text, i, 1) == "+"):
         i += 1
-    while i < length and (_isDigit(_substring(text, i, 1)) or _substring(text, i, 1) == "_"):
+    while i < length and (_strutil.isDigit(_strutil.substring(text, i, 1)) or _strutil.substring(text, i, 1) == "_"):
         i += 1
     isFloat: bool = False
-    if i < length and _substring(text, i, 1) == ".":
+    if i < length and _strutil.substring(text, i, 1) == ".":
         isFloat = True
         i += 1
-        while i < length and (_isDigit(_substring(text, i, 1)) or _substring(text, i, 1) == "_"):
+        while i < length and (_strutil.isDigit(_strutil.substring(text, i, 1)) or _strutil.substring(text, i, 1) == "_"):
             i += 1
-    if i < length and (_substring(text, i, 1) == "e" or _substring(text, i, 1) == "E"):
+    if i < length and (_strutil.substring(text, i, 1) == "e" or _strutil.substring(text, i, 1) == "E"):
         isFloat = True
         i += 1
-        if i < length and (_substring(text, i, 1) == "+" or _substring(text, i, 1) == "-"):
+        if i < length and (_strutil.substring(text, i, 1) == "+" or _strutil.substring(text, i, 1) == "-"):
             i += 1
-        while i < length and _isDigit(_substring(text, i, 1)):
+        while i < length and _strutil.isDigit(_strutil.substring(text, i, 1)):
             i += 1
-    numberText: str = _removeUnderscores(_substring(text, start, i - start))
+    numberText: str = _removeUnderscores(_strutil.substring(text, start, i - start))
     if isFloat:
-        return (json.json_float(_parseFloatText(numberText)), i)
+        return (json.json_float(_strutil.parseFloatText(numberText)), i)
     else:
-        return (json.json_int(_parseIntText(numberText)), i)
+        return (json.json_int(_strutil.parseIntText(numberText)), i)
 
 
 def _parseValue(text: str, index: int, length: int) -> tuple[JsonValueNode, int]:
     i: int = _skipInlineWhitespace(text, index, length)
     if i >= length:
         raise ValueError("tomllib.loads: unexpected end of input")
-    ch: str = _substring(text, i, 1)
+    ch: str = _strutil.substring(text, i, 1)
     if ch == "\"":
         stringResult: tuple[str, int] = _parseBasicString(text, i, length)
         return (json.json_string(stringResult[0]), stringResult[1])
@@ -259,11 +218,11 @@ def _parseValue(text: str, index: int, length: int) -> tuple[JsonValueNode, int]
         return _parseArray(text, i, length)
     elif ch == "{":
         return _parseInlineTable(text, i, length)
-    elif i + 3 < length and _substring(text, i, 4) == "true":
+    elif i + 3 < length and _strutil.substring(text, i, 4) == "true":
         return (json.json_bool(True), i + 4)
-    elif i + 4 < length and _substring(text, i, 5) == "false":
+    elif i + 4 < length and _strutil.substring(text, i, 5) == "false":
         return (json.json_bool(False), i + 5)
-    elif ch == "-" or ch == "+" or _isDigit(ch):
+    elif ch == "-" or ch == "+" or _strutil.isDigit(ch):
         return _parseNumberOrDate(text, i, length)
     else:
         raise ValueError("tomllib.loads: unexpected value")
@@ -272,7 +231,7 @@ def _parseValue(text: str, index: int, length: int) -> tuple[JsonValueNode, int]
 def _parseArray(text: str, index: int, length: int) -> tuple[JsonValueNode, int]:
     items: List[JsonValueNode] = List[JsonValueNode]()
     i: int = _skipLayout(text, index + 1, length)
-    if i < length and _substring(text, i, 1) == "]":
+    if i < length and _strutil.substring(text, i, 1) == "]":
         return (json.json_array(items), i + 1)
     while True:
         itemResult: tuple[JsonValueNode, int] = _parseValue(text, i, length)
@@ -280,10 +239,10 @@ def _parseArray(text: str, index: int, length: int) -> tuple[JsonValueNode, int]
         i = _skipLayout(text, itemResult[1], length)
         if i >= length:
             raise ValueError("tomllib.loads: unterminated array")
-        ch: str = _substring(text, i, 1)
+        ch: str = _strutil.substring(text, i, 1)
         if ch == ",":
             i = _skipLayout(text, i + 1, length)
-            if i < length and _substring(text, i, 1) == "]":
+            if i < length and _strutil.substring(text, i, 1) == "]":
                 return (json.json_array(items), i + 1)
         elif ch == "]":
             return (json.json_array(items), i + 1)
@@ -294,7 +253,7 @@ def _parseArray(text: str, index: int, length: int) -> tuple[JsonValueNode, int]
 def _parseInlineTable(text: str, index: int, length: int) -> tuple[JsonValueNode, int]:
     entries: OrderedDict[str, JsonValueNode] = OrderedDict[str, JsonValueNode]()
     i: int = _skipInlineWhitespace(text, index + 1, length)
-    if i < length and _substring(text, i, 1) == "}":
+    if i < length and _strutil.substring(text, i, 1) == "}":
         return (json.json_object(entries), i + 1)
     while True:
         keyPathResult: tuple[List[str], int] = _parseKeyPath(text, i, length)
@@ -304,7 +263,7 @@ def _parseInlineTable(text: str, index: int, length: int) -> tuple[JsonValueNode
         i = _skipInlineWhitespace(text, valueResult[1], length)
         if i >= length:
             raise ValueError("tomllib.loads: unterminated inline table")
-        ch: str = _substring(text, i, 1)
+        ch: str = _strutil.substring(text, i, 1)
         if ch == ",":
             i = _skipInlineWhitespace(text, i + 1, length)
         elif ch == "}":
@@ -379,16 +338,16 @@ def _navigateCreateTable(root: OrderedDict[str, JsonValueNode], path: List[str],
 
 
 def loads(text: str) -> JsonValueNode:
-    length: int = _length(text)
+    length: int = _strutil.length(text)
     root: OrderedDict[str, JsonValueNode] = OrderedDict[str, JsonValueNode]()
     currentTable: OrderedDict[str, JsonValueNode] = root
     i: int = _skipLayout(text, 0, length)
     while i < length:
-        ch: str = _substring(text, i, 1)
+        ch: str = _strutil.substring(text, i, 1)
         if ch == "[":
             isArrayTable: bool = False
             j: int = i + 1
-            if j < length and _substring(text, j, 1) == "[":
+            if j < length and _strutil.substring(text, j, 1) == "[":
                 isArrayTable = True
                 j += 1
             keyPathResult: tuple[List[str], int] = _parseKeyPath(text, j, length)

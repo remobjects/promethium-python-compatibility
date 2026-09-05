@@ -41,10 +41,10 @@ def b64decode(data: str) -> bytes:
 
 def _toUrlSafe(value: str) -> str:
     result: str = ""
-    length: int = string._length(value)
+    length: int = _strutil.length(value)
     i: int = 0
     while i < length:
-        ch: str = string._substring(value, i, 1)
+        ch: str = _strutil.substring(value, i, 1)
         if ch == "+":
             result = result + "-"
         elif ch == "/":
@@ -57,10 +57,10 @@ def _toUrlSafe(value: str) -> str:
 
 def _fromUrlSafe(value: str) -> str:
     result: str = ""
-    length: int = string._length(value)
+    length: int = _strutil.length(value)
     i: int = 0
     while i < length:
-        ch: str = string._substring(value, i, 1)
+        ch: str = _strutil.substring(value, i, 1)
         if ch == "-":
             result = result + "+"
         elif ch == "_":

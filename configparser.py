@@ -24,22 +24,6 @@ from collections import OrderedDict
 # target.
 
 
-def _length(value: str) -> int:
-    if defined("COOPER") or defined("TOFFEE"):
-        return value.length()
-    else:
-        return value.Length
-
-
-def _substring(value: str, start: int, count: int) -> str:
-    if defined("ECHOES") or defined("ISLAND"):
-        return value.Substring(start, count)
-    elif defined("COOPER"):
-        return value.substring(start, start + count)
-    else:
-        return value.substringWithRange(NSMakeRange(start, count))
-
-
 def _trim(value: str) -> str:
     if defined("ECHOES") or defined("ISLAND"):
         return value.Trim()
@@ -50,10 +34,10 @@ def _trim(value: str) -> str:
 
 
 def _indexOfChar(value: str, ch: str) -> int:
-    length: int = _length(value)
+    length: int = _strutil.length(value)
     index: int = 0
     while index < length:
-        if _substring(value, index, 1) == ch:
+        if _strutil.substring(value, index, 1) == ch:
             return index
         index += 1
     return -1
@@ -68,9 +52,9 @@ def parse(lines: List[str]) -> OrderedDict[str, OrderedDict[str, str]]:
     while lineIndex < len(lines):
         line: str = _trim(lines.__getitem__(lineIndex))
         lineIndex += 1
-        if _length(line) == 0:
+        if _strutil.length(line) == 0:
             continue
-        first: str = _substring(line, 0, 1)
+        first: str = _strutil.substring(line, 0, 1)
         if first == "#" or first == ";":
             continue
         if first == "[":
@@ -78,9 +62,9 @@ def parse(lines: List[str]) -> OrderedDict[str, OrderedDict[str, str]]:
                 result[currentSection] = currentMap
             closeIndex: int = _indexOfChar(line, "]")
             if closeIndex > 0:
-                currentSection = _substring(line, 1, closeIndex - 1)
+                currentSection = _strutil.substring(line, 1, closeIndex - 1)
             else:
-                currentSection = _substring(line, 1, _length(line) - 1)
+                currentSection = _strutil.substring(line, 1, _strutil.length(line) - 1)
             currentMap = OrderedDict[str, str]()
             hasSection = True
             continue
@@ -89,8 +73,8 @@ def parse(lines: List[str]) -> OrderedDict[str, OrderedDict[str, str]]:
             sepIndex = _indexOfChar(line, ":")
         if sepIndex < 0:
             continue
-        key: str = _trim(_substring(line, 0, sepIndex))
-        value: str = _trim(_substring(line, sepIndex + 1, _length(line) - sepIndex - 1))
+        key: str = _trim(_strutil.substring(line, 0, sepIndex))
+        value: str = _trim(_strutil.substring(line, sepIndex + 1, _strutil.length(line) - sepIndex - 1))
         currentMap[key] = value
     if hasSection:
         result[currentSection] = currentMap
